@@ -110,9 +110,35 @@ export class CloudflareClient {
 
   /**
    * DNS analytics from GraphQL.
-   * @returns {{ byDate, byQueryType, byResponseCode, byQueryName }}
+   * Cloudflare caps zone-level queries at 7 days — wider ranges are
+   * automatically chunked and merged.
+   * @returns {{ byDate, byQueryType, byResponseCode, byQueryName, byCacheStatus }}
    */
   async getDnsAnalytics(zoneId, startDate, endDate) {
+    const start    = new Date(startDate + 'T00:00:00Z');
+    const end      = new Date(endDate   + 'T00:00:00Z');
+    const diffDays = Math.round((end - start) / 86_400_000);
+
+    if (diffDays < 7) {
+      return this._fetchAnalyticsChunk(zoneId, startDate, endDate);
+    }
+
+    // Split into ≤7-day windows and run sequentially (Workers avoids fan-out quota)
+    const chunks = [];
+    let cur = new Date(start);
+    while (cur <= end) {
+      const chunkEnd = new Date(cur);
+      chunkEnd.setUTCDate(chunkEnd.getUTCDate() + 6);
+      if (chunkEnd > end) chunkEnd.setTime(end.getTime());
+      chunks.push(await this._fetchAnalyticsChunk(zoneId, isoDate(cur), isoDate(chunkEnd)));
+      cur = new Date(chunkEnd);
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+
+    return mergeAnalytics(chunks);
+  }
+
+  async _fetchAnalyticsChunk(zoneId, startDate, endDate) {
     const resp = await fetch(GRAPHQL_ENDPOINT, {
       method: 'POST',
       headers: this.headers,
@@ -186,4 +212,36 @@ function computeDateRange(frequency, lookbackOverrideDays) {
 
 function isoDate(d) {
   return d.toISOString().slice(0, 10);
+}
+
+/** Merge multiple weekly analytics chunks into one combined result. */
+function mergeAnalytics(chunks) {
+  const byDate  = [];
+  const byType  = {};
+  const byCode  = {};
+  const byName  = {};
+  const byCache = {};
+
+  for (const chunk of chunks) {
+    byDate.push(...(chunk.byDate ?? []));
+
+    for (const row of chunk.byQueryType    ?? []) byType [row.dimensions.queryType]     = (byType [row.dimensions.queryType]     ?? 0) + row.count;
+    for (const row of chunk.byResponseCode ?? []) byCode [row.dimensions.responseCode]  = (byCode [row.dimensions.responseCode]  ?? 0) + row.count;
+    for (const row of chunk.byQueryName    ?? []) byName [row.dimensions.queryName]     = (byName [row.dimensions.queryName]     ?? 0) + row.count;
+    for (const row of chunk.byCacheStatus  ?? []) byCache[row.dimensions.responseCached] = (byCache[row.dimensions.responseCached] ?? 0) + row.count;
+  }
+
+  const toRows = (agg, dimKey, limit) =>
+    Object.entries(agg)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([k, v]) => ({ dimensions: { [dimKey]: k }, count: v }));
+
+  return {
+    byDate,
+    byQueryType:    toRows(byType,  'queryType',      20),
+    byResponseCode: toRows(byCode,  'responseCode',   20),
+    byQueryName:    toRows(byName,  'queryName',      15),
+    byCacheStatus:  toRows(byCache, 'responseCached',  5),
+  };
 }
