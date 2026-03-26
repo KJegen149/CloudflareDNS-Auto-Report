@@ -1,0 +1,80 @@
+{
+  "_comment": "Copy this file to accounts.json and fill in your details. Never commit accounts.json — it references secrets by env var name.",
+  "accounts": [
+    {
+      "id": "apple-juice",
+      "display_name": "Apple Juice Corp",
+      "cloudflare_api_token_env": "CF_TOKEN_APPLE_JUICE",
+      "cloudflare_account_id": "YOUR_CF_ACCOUNT_ID_HERE",
+      "zones": [
+        {
+          "zone_id": "YOUR_ZONE_ID_HERE",
+          "zone_name": "applejuice.com"
+        }
+      ],
+      "schedule": {
+        "frequency": "monthly",
+        "day_of_month": 1,
+        "hour_utc": 8,
+        "minute_utc": 0
+      },
+      "email": {
+        "smtp_profile": "default",
+        "recipients": [
+          "admin@applejuice.com",
+          "manager@applejuice.com"
+        ],
+        "subject_prefix": "[DNS Report]"
+      },
+      "report": {
+        "title": "Apple Juice Corp — DNS Report",
+        "include_dns_records": true,
+        "top_queries_limit": 15,
+        "lookback_override_days": null
+      }
+    },
+    {
+      "id": "orange-juice",
+      "display_name": "Orange Juice Ltd",
+      "cloudflare_api_token_env": "CF_TOKEN_ORANGE_JUICE",
+      "cloudflare_account_id": "YOUR_CF_ACCOUNT_ID_HERE",
+      "zones": [
+        {
+          "zone_id": "YOUR_ZONE_ID_HERE",
+          "zone_name": "orangejuice.com"
+        }
+      ],
+      "schedule": {
+        "frequency": "weekly",
+        "day_of_week": "monday",
+        "hour_utc": 8,
+        "minute_utc": 0
+      },
+      "email": {
+        "smtp_profile": "default",
+        "recipients": [
+          "admin@orangejuice.com"
+        ],
+        "subject_prefix": "[DNS Report]"
+      },
+      "report": {
+        "title": "Orange Juice Ltd — DNS Report",
+        "include_dns_records": true,
+        "top_queries_limit": 15,
+        "lookback_override_days": null
+      }
+    }
+  ],
+  "smtp_profiles": {
+    "default": {
+      "host_env": "SMTP_HOST",
+      "port_env": "SMTP_PORT",
+      "username_env": "SMTP_USERNAME",
+      "password_env": "SMTP_PASSWORD",
+      "from_email_env": "SMTP_FROM_EMAIL",
+      "from_name": "Cloudflare DNS Reports",
+      "use_tls": true,
+      "use_starttls": false
+    }
+  }
+}

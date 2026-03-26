@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{{ report_title }} — {{ frequency }} DNS Report</title>
+<style>
+/* ── Page setup (WeasyPrint CSS Paged Media) ──────────────────────────── */
+@page {
+  size: A4;
+  margin: 1.8cm 1.5cm 2.2cm 1.5cm;
+  @bottom-center {
+    content: "Page " counter(page) " of " counter(pages);
+    font-size: 8pt;
+    color: #999999;
+    font-family: -apple-system, Arial, sans-serif;
+  }
+  @bottom-right {
+    content: "{{ generated_at }}";
+    font-size: 8pt;
+    color: #999999;
+    font-family: -apple-system, Arial, sans-serif;
+  }
+}
+
+/* ── Reset & base ─────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  font-size: 10pt;
+  color: #1a1a1a;
+  background: #ffffff;
+  line-height: 1.5;
+}
+h1, h2, h3 { font-weight: 700; line-height: 1.2; }
+a { color: #2E6DA4; text-decoration: none; }
+img { max-width: 100%; display: block; }
+
+/* ── Header banner ────────────────────────────────────────────────────── */
+.report-header {
+  background: #722F37;
+  color: #ffffff;
+  padding: 24px 28px 20px;
+  margin-bottom: 0;
+  page-break-inside: avoid;
+}
+.report-header .brand {
+  font-size: 9pt;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  opacity: 0.75;
+  margin-bottom: 6px;
+}
+.report-header h1 {
+  font-size: 22pt;
+  margin-bottom: 6px;
+}
+.report-header .meta {
+  font-size: 9pt;
+  opacity: 0.85;
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.report-header .meta span::before {
+  content: "▸ ";
+  opacity: 0.6;
+}
+.badge {
+  display: inline-block;
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.35);
+  border-radius: 12px;
+  padding: 2px 10px;
+  font-size: 8pt;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-top: 10px;
+}
+
+/* ── Period bar ───────────────────────────────────────────────────────── */
+.period-bar {
+  background: #4A1E24;
+  color: rgba(255,255,255,0.85);
+  padding: 7px 28px;
+  font-size: 8.5pt;
+  display: flex;
+  justify-content: space-between;
+}
+
+/* ── Content wrapper ──────────────────────────────────────────────────── */
+.content { padding: 20px 0 0; }
+
+/* ── Section titles ───────────────────────────────────────────────────── */
+.section {
+  margin-bottom: 22px;
+  page-break-inside: avoid;
+}
+.section-title {
+  font-size: 11pt;
+  font-weight: 700;
+  color: #722F37;
+  border-bottom: 2px solid #722F37;
+  padding-bottom: 4px;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ── Summary cards ────────────────────────────────────────────────────── */
+.cards {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+.card {
+  flex: 1;
+  min-width: 100px;
+  background: #f8f5f6;
+  border-left: 4px solid #722F37;
+  border-radius: 3px;
+  padding: 12px 14px;
+}
+.card.blue  { border-left-color: #2E6DA4; }
+.card.green { border-left-color: #2D7D46; }
+.card.amber { border-left-color: #D97706; }
+.card.red   { border-left-color: #C0392B; }
+.card-value {
+  font-size: 20pt;
+  font-weight: 700;
+  color: #722F37;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.card.blue  .card-value { color: #2E6DA4; }
+.card.green .card-value { color: #2D7D46; }
+.card.amber .card-value { color: #D97706; }
+.card.red   .card-value { color: #C0392B; }
+.card-label {
+  font-size: 7.5pt;
+  color: #888888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ── Chart grid ───────────────────────────────────────────────────────── */
+.chart-row {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 18px;
+  page-break-inside: avoid;
+}
+.chart-half {
+  flex: 1;
+  min-width: 0;
+}
+.chart-full {
+  width: 100%;
+  page-break-inside: avoid;
+}
+.chart-img {
+  width: 100%;
+  border-radius: 4px;
+  border: 1px solid #e5d7d9;
+}
+
+/* ── Tables ───────────────────────────────────────────────────────────── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 8.5pt;
+}
+thead th {
+  background: #722F37;
+  color: #ffffff;
+  padding: 7px 10px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 7.5pt;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+tbody tr:nth-child(even) { background: #fdf9f9; }
+tbody tr:hover { background: #f5ecec; }
+tbody td {
+  padding: 6px 10px;
+  border-bottom: 1px solid #f0e8e9;
+  vertical-align: middle;
+}
+tbody td.mono {
+  font-family: "SFMono-Regular", "Consolas", "Menlo", monospace;
+  font-size: 7.5pt;
+  color: #333333;
+}
+.tbl-wrap {
+  overflow: hidden;
+  border: 1px solid #e5d7d9;
+  border-radius: 4px;
+}
+
+/* ── Status pills ─────────────────────────────────────────────────────── */
+.pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 10px;
+  font-size: 7pt;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.pill-green  { background: #d1f0de; color: #1a5c32; }
+.pill-red    { background: #fce8e8; color: #7b1c1c; }
+.pill-amber  { background: #fef3d0; color: #7a4a00; }
+.pill-blue   { background: #ddeeff; color: #1a3d6e; }
+.pill-gray   { background: #f0f0f0; color: #555555; }
+
+/* ── DNSSEC status block ──────────────────────────────────────────────── */
+.dnssec-block {
+  border: 1px solid #e5d7d9;
+  border-radius: 4px;
+  padding: 14px 18px;
+  background: #fdf9f9;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.dnssec-indicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+.dnssec-indicator.active   { background: #2D7D46; }
+.dnssec-indicator.inactive { background: #C0392B; }
+.dnssec-indicator.unknown  { background: #D97706; }
+.dnssec-body h3 { font-size: 10pt; margin-bottom: 4px; }
+.dnssec-body p  { font-size: 8pt; color: #666; margin: 2px 0 0; }
+
+/* ── Record type summary inline table ────────────────────────────────── */
+.type-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.type-chip {
+  background: #f0eced;
+  border: 1px solid #ddd0d2;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 8pt;
+  font-weight: 600;
+}
+.type-chip span {
+  color: #722F37;
+}
+
+/* ── Footer ───────────────────────────────────────────────────────────── */
+.report-footer {
+  margin-top: 28px;
+  border-top: 2px solid #e5d7d9;
+  padding-top: 10px;
+  font-size: 7.5pt;
+  color: #aaaaaa;
+  display: flex;
+  justify-content: space-between;
+}
+
+/* ── Utility ──────────────────────────────────────────────────────────── */
+.text-right { text-align: right; }
+.text-center { text-align: center; }
+.nowrap { white-space: nowrap; }
+.proxied-yes { color: #F6821F; font-weight: 600; }
+.proxied-no  { color: #888888; }
+.page-break  { page-break-before: always; }
+</style>
+</head>
+<body>
+
+{# ═══════════════════════════════════════════════════════ HEADER ═══ #}
+<div class="report-header">
+  <div class="brand">Cloudflare DNS Analytics</div>
+  <h1>{{ report_title }}</h1>
+  <div class="meta">
+    <span>{{ zone_info.name | default(zone.zone_name) }}</span>
+    <span>{{ frequency }} Report</span>
+    <span>{{ zone_info.plan.name | default("") }}</span>
+  </div>
+  <div class="badge">{{ frequency }}</div>
+</div>
+
+<div class="period-bar">
+  <span>Report Period: {{ period.start }} — {{ period.end }}</span>
+  <span>Generated: {{ generated_at }}</span>
+</div>
+
+<div class="content">
+
+{# ═══════════════════════════════════════════════════ SUMMARY CARDS ═ #}
+<div class="section">
+  <div class="section-title">Summary</div>
+  <div class="cards">
+
+    <div class="card">
+      <div class="card-value">{{ metrics.total_queries | human }}</div>
+      <div class="card-label">Total Queries</div>
+    </div>
+
+    <div class="card blue">
+      <div class="card-value">{{ metrics.cache_hit_pct | pct }}</div>
+      <div class="card-label">Cache Hit Rate</div>
+    </div>
+
+    <div class="card green">
+      <div class="card-value">{{ metrics.success_pct | pct }}</div>
+      <div class="card-label">Success Rate</div>
+    </div>
+
+    {% if metrics.nxdomain_pct > 5.0 %}
+    <div class="card amber">
+    {% else %}
+    <div class="card">
+    {% endif %}
+      <div class="card-value">{{ metrics.nxdomain_pct | pct }}</div>
+      <div class="card-label">NXDOMAIN Rate</div>
+    </div>
+
+    <div class="card">
+      <div class="card-value">{{ metrics.total_dns_records }}</div>
+      <div class="card-label">DNS Records</div>
+    </div>
+
+  </div>
+</div>
+
+{# ═══════════════════════════════════════════════ QUERY VOLUME CHART ═ #}
+{% if charts.volume %}
+<div class="section">
+  <div class="section-title">Query Volume</div>
+  <div class="chart-full">
+    <img class="chart-img" src="data:image/png;base64,{{ charts.volume }}" alt="Query Volume by Day">
+  </div>
+</div>
+{% endif %}
+
+{# ══════════════════════════════════════════════ TOP DOMAINS CHART ═══ #}
+{% if charts.domains %}
+<div class="section">
+  <div class="section-title">Top Queried Domains</div>
+  <div class="chart-full">
+    <img class="chart-img" src="data:image/png;base64,{{ charts.domains }}" alt="Top Queried Domains">
+  </div>
+</div>
+{% endif %}
+
+{# ═══════════════════════════════════════════ BREAKDOWN CHARTS (2-up) ═ #}
+{% if charts.types or charts.codes %}
+<div class="section">
+  <div class="section-title">Query & Response Breakdown</div>
+  <div class="chart-row">
+    {% if charts.types %}
+    <div class="chart-half">
+      <img class="chart-img" src="data:image/png;base64,{{ charts.types }}" alt="Query Types">
+    </div>
+    {% endif %}
+    {% if charts.codes %}
+    <div class="chart-half">
+      <img class="chart-img" src="data:image/png;base64,{{ charts.codes }}" alt="Response Codes">
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ══════════════════════════════════════════ RESPONSE CODE TABLE ══════ #}
+{% set by_code = analytics.get('byResponseCode', []) %}
+{% if by_code %}
+<div class="section">
+  <div class="section-title">Response Code Detail</div>
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Response Code</th>
+          <th class="text-right">Query Count</th>
+          <th class="text-right">Share of Traffic</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set total = metrics.total_queries %}
+        {% for row in by_code %}
+        {% set code = row.dimensions.responseCode %}
+        {% set count = row.count %}
+        {% set pct_val = (count / total * 100) if total > 0 else 0 %}
+        <tr>
+          <td class="mono">{{ code }}</td>
+          <td class="text-right">{{ count | human }}</td>
+          <td class="text-right">{{ "%.2f" | format(pct_val) }}%</td>
+          <td>
+            {% if code == 'NOERROR' %}
+              <span class="pill pill-green">OK</span>
+            {% elif code == 'NXDOMAIN' %}
+              <span class="pill pill-amber">Not Found</span>
+            {% elif code == 'SERVFAIL' %}
+              <span class="pill pill-red">Server Failure</span>
+            {% elif code == 'REFUSED' %}
+              <span class="pill pill-red">Refused</span>
+            {% else %}
+              <span class="pill pill-gray">{{ code }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ══════════════════════════════════════════ QUERY TYPE TABLE ═════════ #}
+{% set by_type = analytics.get('byQueryType', []) %}
+{% if by_type %}
+<div class="section">
+  <div class="section-title">Record Type Distribution</div>
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Record Type</th>
+          <th class="text-right">Query Count</th>
+          <th class="text-right">Share</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set total = metrics.total_queries %}
+        {% set type_desc = {
+          'A':     'IPv4 address mapping',
+          'AAAA':  'IPv6 address mapping',
+          'CNAME': 'Canonical name alias',
+          'MX':    'Mail exchanger',
+          'TXT':   'Text records (SPF, DKIM, etc.)',
+          'NS':    'Nameserver delegation',
+          'SOA':   'Start of authority',
+          'PTR':   'Reverse DNS pointer',
+          'SRV':   'Service locator',
+          'CAA':   'Certification authority authorization',
+          'DS':    'DNSSEC delegation signer',
+        } %}
+        {% for row in by_type %}
+        {% set rtype = row.dimensions.queryType %}
+        {% set count = row.count %}
+        {% set pct_val = (count / total * 100) if total > 0 else 0 %}
+        <tr>
+          <td><strong class="mono">{{ rtype }}</strong></td>
+          <td class="text-right">{{ count | human }}</td>
+          <td class="text-right">{{ "%.1f" | format(pct_val) }}%</td>
+          <td style="color:#666; font-size:8pt;">{{ type_desc.get(rtype, '') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ═══════════════════════════════════════════════════ DNSSEC STATUS ═══ #}
+<div class="section">
+  <div class="section-title">DNSSEC Status</div>
+  {% set ds = dnssec %}
+  {% set dnssec_status = ds.status | lower if ds.status else 'unknown' %}
+  <div class="dnssec-block">
+    <div class="dnssec-indicator {{ 'active' if dnssec_status == 'active' else ('inactive' if dnssec_status in ['disabled', 'inactive'] else 'unknown') }}"></div>
+    <div class="dnssec-body">
+      <h3>
+        {% if dnssec_status == 'active' %}
+          DNSSEC is Active
+        {% elif dnssec_status in ['disabled', 'inactive'] %}
+          DNSSEC is Disabled
+        {% else %}
+          DNSSEC Status: {{ ds.status | default('Unknown') }}
+        {% endif %}
+      </h3>
+      {% if ds.ds_record %}
+      <p class="mono">DS Record: {{ ds.ds_record }}</p>
+      {% endif %}
+      {% if ds.status == 'active' %}
+      <p>Zone is cryptographically signed. Resolvers that support DNSSEC will validate responses.</p>
+      {% elif dnssec_status in ['disabled', 'inactive'] %}
+      <p>DNSSEC is not enabled. Consider enabling it in the Cloudflare dashboard for additional security.</p>
+      {% endif %}
+      {% if ds.modified_on %}
+      <p>Last modified: {{ ds.modified_on[:10] }}</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ════════════════════════════════════════════════════ DNS RECORDS ════ #}
+{% if include_records and dns_records %}
+<div class="section page-break">
+  <div class="section-title">DNS Records Inventory ({{ dns_records | length }} records)</div>
+
+  {# ── Record type summary chips ── #}
+  <div class="type-grid" style="margin-bottom:12px;">
+    {% for rtype, count in metrics.record_type_counts.items() %}
+    <div class="type-chip"><span>{{ rtype }}</span> × {{ count }}</div>
+    {% endfor %}
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:10%;">Type</th>
+          <th style="width:28%;">Name</th>
+          <th>Content</th>
+          <th style="width:8%;" class="text-right">TTL</th>
+          <th style="width:10%;" class="text-center">Proxied</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in dns_records %}
+        <tr>
+          <td><span class="pill pill-blue">{{ r.type }}</span></td>
+          <td class="mono">{{ r.name }}</td>
+          <td class="mono">
+            {% if r.content | length > 60 %}
+              {{ r.content[:60] }}…
+            {% else %}
+              {{ r.content }}
+            {% endif %}
+          </td>
+          <td class="text-right" style="color:#666;">
+            {% if r.ttl == 1 %}Auto{% else %}{{ r.ttl }}{% endif %}
+          </td>
+          <td class="text-center">
+            {% if r.proxiable and r.proxied %}
+              <span class="proxied-yes">&#x2713; Yes</span>
+            {% else %}
+              <span class="proxied-no">DNS only</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ════════════════════════════════════════════════════════ FOOTER ════ #}
+<div class="report-footer">
+  <span>
+    {{ zone_info.name | default(zone.zone_name) }} &bull;
+    {{ frequency }} DNS Report &bull;
+    {{ period.start }} to {{ period.end }}
+  </span>
+  <span>CloudflareDNS-Auto-Report</span>
+</div>
+
+</div>{# end .content #}
+</body>
+</html>

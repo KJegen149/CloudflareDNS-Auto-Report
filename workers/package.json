@@ -1,0 +1,17 @@
+{
+  "name": "cloudflare-dns-auto-report",
+  "version": "1.0.0",
+  "description": "Automated Cloudflare DNS analytics reports via Workers cron triggers",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev --test-scheduled",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "test-daily": "curl 'http://localhost:8787/__scheduled?cron=0+8+*+*+*'",
+    "test-weekly": "curl 'http://localhost:8787/__scheduled?cron=0+8+*+*+1'",
+    "test-monthly": "curl 'http://localhost:8787/__scheduled?cron=0+8+1+*+*'"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
