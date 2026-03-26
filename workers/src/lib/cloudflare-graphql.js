@@ -8,7 +8,7 @@
 const GRAPHQL_ENDPOINT = 'https://api.cloudflare.com/client/v4/graphql';
 const REST_BASE = 'https://api.cloudflare.com/client/v4';
 
-/** Four grouped analytics queries in one GraphQL round-trip using aliases. */
+/** Five grouped analytics queries in one GraphQL round-trip using aliases. */
 const DNS_ANALYTICS_QUERY = `
 query DnsReport($zoneTag: String!, $startDate: Date!, $endDate: Date!) {
   viewer {
@@ -19,31 +19,39 @@ query DnsReport($zoneTag: String!, $startDate: Date!, $endDate: Date!) {
         orderBy: [date_ASC]
       ) {
         dimensions { date }
-        sum { queryCount uncachedCount staleCount }
+        count
       }
       byQueryType: dnsAnalyticsAdaptiveGroups(
         limit: 20
         filter: { date_geq: $startDate, date_leq: $endDate }
-        orderBy: [sum_queryCount_DESC]
+        orderBy: [count_DESC]
       ) {
         dimensions { queryType }
-        sum { queryCount }
+        count
       }
       byResponseCode: dnsAnalyticsAdaptiveGroups(
         limit: 20
         filter: { date_geq: $startDate, date_leq: $endDate }
-        orderBy: [sum_queryCount_DESC]
+        orderBy: [count_DESC]
       ) {
         dimensions { responseCode }
-        sum { queryCount }
+        count
       }
       byQueryName: dnsAnalyticsAdaptiveGroups(
         limit: 15
         filter: { date_geq: $startDate, date_leq: $endDate }
-        orderBy: [sum_queryCount_DESC]
+        orderBy: [count_DESC]
       ) {
         dimensions { queryName }
-        sum { queryCount }
+        count
+      }
+      byCacheStatus: dnsAnalyticsAdaptiveGroups(
+        limit: 5
+        filter: { date_geq: $startDate, date_leq: $endDate }
+        orderBy: [count_DESC]
+      ) {
+        dimensions { responseCached }
+        count
       }
     }
   }
@@ -119,7 +127,7 @@ export class CloudflareClient {
 
     const zones = result?.data?.viewer?.zones ?? [];
     if (!zones.length) {
-      return { byDate: [], byQueryType: [], byResponseCode: [], byQueryName: [] };
+      return { byDate: [], byQueryType: [], byResponseCode: [], byQueryName: [], byCacheStatus: [] };
     }
     return zones[0];
   }

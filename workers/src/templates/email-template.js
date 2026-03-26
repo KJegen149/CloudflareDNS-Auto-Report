@@ -56,12 +56,19 @@ function barRow(label, count, maxCount, color = C.blue) {
 
 /** Compute summary metrics from analytics data. */
 function computeMetrics(analytics, dnsRecords) {
-  const byDate = analytics.byDate ?? [];
-  const byCode = analytics.byResponseCode ?? [];
+  const byDate  = analytics.byDate  ?? [];
+  const byCode  = analytics.byResponseCode ?? [];
+  const byCache = analytics.byCacheStatus  ?? [];
 
-  const total    = byDate.reduce((s, d) => s + d.sum.queryCount, 0);
-  const uncached = byDate.reduce((s, d) => s + (d.sum.uncachedCount ?? 0), 0);
-  const codeMap  = Object.fromEntries(byCode.map(d => [d.dimensions.responseCode, d.sum.queryCount]));
+  const total = byDate.reduce((s, d) => s + d.count, 0);
+
+  // Derive uncached from byCacheStatus aggregate
+  const cacheRaw = Object.fromEntries(byCache.map(d => [d.dimensions.responseCached, d.count]));
+  const uncachedAll = cacheRaw[false] ?? cacheRaw['false'] ?? 0;
+  const totalAll    = Object.values(cacheRaw).reduce((s, v) => s + v, 0) || 1;
+  const uncached    = Math.round(total * (uncachedAll / totalAll));
+
+  const codeMap = Object.fromEntries(byCode.map(d => [d.dimensions.responseCode, d.count]));
 
   return {
     total,
@@ -114,23 +121,23 @@ export function renderEmail({
 
   // ── Top queried domains bar chart ──────────────────────────────────────────
   const topNames  = analytics.byQueryName ?? [];
-  const maxNames  = topNames[0]?.sum.queryCount ?? 1;
+  const maxNames  = topNames[0]?.count ?? 1;
   const topBars   = topNames.slice(0, 12)
-    .map(d => barRow(d.dimensions.queryName, d.sum.queryCount, maxNames, C.blue))
+    .map(d => barRow(d.dimensions.queryName, d.count, maxNames, C.blue))
     .join('');
 
   // ── Query type bar chart ───────────────────────────────────────────────────
   const byType   = analytics.byQueryType ?? [];
-  const maxType  = byType[0]?.sum.queryCount ?? 1;
+  const maxType  = byType[0]?.count ?? 1;
   const typeBars = byType.slice(0, 8)
-    .map(d => barRow(d.dimensions.queryType, d.sum.queryCount, maxType, C.burgundy))
+    .map(d => barRow(d.dimensions.queryType, d.count, maxType, C.burgundy))
     .join('');
 
   // ── Daily volume mini-bars ─────────────────────────────────────────────────
   const byDate  = analytics.byDate ?? [];
-  const maxDay  = Math.max(...byDate.map(d => d.sum.queryCount), 1);
+  const maxDay  = Math.max(...byDate.map(d => d.count), 1);
   const dayBars = byDate.map(d => {
-    const pct = Math.round((d.sum.queryCount / maxDay) * 100);
+    const pct = Math.round((d.count / maxDay) * 100);
     const dt  = d.dimensions.date.slice(5);  // MM-DD
     return `<td style="text-align:center; vertical-align:bottom; padding:0 2px; width:${Math.floor(100 / Math.max(byDate.length,1))}%;">
       <div style="background:${C.burgundy}; height:${Math.max(pct * 0.6, 2)}px; border-radius:2px 2px 0 0; opacity:0.85;"></div>
@@ -141,7 +148,7 @@ export function renderEmail({
   // ── Response code rows ─────────────────────────────────────────────────────
   const codeRows = (analytics.byResponseCode ?? []).slice(0, 6).map(d => {
     const code  = d.dimensions.responseCode;
-    const count = d.sum.queryCount;
+    const count = d.count;
     const pct   = m.total > 0 ? ((count / m.total) * 100).toFixed(2) : '0.00';
     const meta  = CODE_META[code] ?? { label: code, bg: '#f0f0f0', fg: '#555' };
     return `<tr style="border-bottom:1px solid ${C.border};">

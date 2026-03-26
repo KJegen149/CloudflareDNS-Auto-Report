@@ -394,7 +394,7 @@ tbody td.mono {
         {% set total = metrics.total_queries %}
         {% for row in by_code %}
         {% set code = row.dimensions.responseCode %}
-        {% set count = row.sum.queryCount %}
+        {% set count = row.count %}
         {% set pct_val = (count / total * 100) if total > 0 else 0 %}
         <tr>
           <td class="mono">{{ code }}</td>
@@ -453,7 +453,7 @@ tbody td.mono {
         } %}
         {% for row in by_type %}
         {% set rtype = row.dimensions.queryType %}
-        {% set count = row.sum.queryCount %}
+        {% set count = row.count %}
         {% set pct_val = (count / total * 100) if total > 0 else 0 %}
         <tr>
           <td><strong class="mono">{{ rtype }}</strong></td>

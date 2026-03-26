@@ -80,14 +80,25 @@ def _style_ax(ax):
 
 # ── Individual chart generators ────────────────────────────────────────────────
 
-def chart_query_volume(by_date: list) -> Optional[str]:
+def chart_query_volume(by_date: list, by_cache_status: Optional[list] = None) -> Optional[str]:
     """Stacked bar chart: total vs uncached queries by day."""
     if not by_date:
         return None
 
     dates  = [d["dimensions"]["date"][-5:] for d in by_date]
-    total  = [d["sum"]["queryCount"] for d in by_date]
-    unc    = [d["sum"].get("uncachedCount", 0) for d in by_date]
+    total  = [d["count"] for d in by_date]
+
+    # Compute uncached fraction from byCacheStatus aggregate ratio
+    cache_map = {}
+    if by_cache_status:
+        for row in by_cache_status:
+            key = row["dimensions"].get("responseCached")
+            cache_map[key] = row["count"]
+    total_all = sum(cache_map.values()) or 1
+    uncached_all = cache_map.get(False, cache_map.get("false", 0))
+    uncached_ratio = uncached_all / total_all
+
+    unc    = [round(t * uncached_ratio) for t in total]
     cached = [t - u for t, u in zip(total, unc)]
 
     fig, ax = plt.subplots(figsize=(11, 4))
@@ -117,7 +128,7 @@ def chart_query_types(by_type: list) -> Optional[str]:
 
     items  = by_type[:8]
     labels = [d["dimensions"]["queryType"] for d in items]
-    values = [d["sum"]["queryCount"] for d in items]
+    values = [d["count"] for d in items]
     if sum(values) == 0:
         return None
 
@@ -150,7 +161,7 @@ def chart_response_codes(by_code: list) -> Optional[str]:
 
     items  = by_code[:7]
     labels = [d["dimensions"]["responseCode"] for d in items]
-    values = [d["sum"]["queryCount"] for d in items]
+    values = [d["count"] for d in items]
     if sum(values) == 0:
         return None
 
@@ -185,7 +196,7 @@ def chart_top_domains(by_name: list) -> Optional[str]:
 
     items  = by_name[:12]
     names  = [d["dimensions"]["queryName"] for d in items]
-    counts = [d["sum"]["queryCount"] for d in items]
+    counts = [d["count"] for d in items]
 
     display = [n[:52] + "…" if len(n) > 52 else n for n in names]
     # Reverse so highest is at top
@@ -221,15 +232,22 @@ def chart_top_domains(by_name: list) -> Optional[str]:
 # ── Summary metrics ────────────────────────────────────────────────────────────
 
 def compute_metrics(analytics: dict, dns_records: list) -> dict:
-    by_date = analytics.get("byDate", [])
-    by_code = analytics.get("byResponseCode", [])
+    by_date        = analytics.get("byDate", [])
+    by_code        = analytics.get("byResponseCode", [])
+    by_cache       = analytics.get("byCacheStatus", [])
 
-    total     = sum(d["sum"]["queryCount"] for d in by_date)
-    uncached  = sum(d["sum"].get("uncachedCount", 0) for d in by_date)
+    total = sum(d["count"] for d in by_date)
+
+    # Derive cached/uncached from byCacheStatus aggregate
+    cache_map_raw = {}
+    for row in by_cache:
+        key = row["dimensions"].get("responseCached")
+        cache_map_raw[key] = row["count"]
+    uncached  = cache_map_raw.get(False, cache_map_raw.get("false", 0))
     cached    = total - uncached
     cache_pct = round(cached / total * 100, 1) if total else 0
 
-    code_map  = {d["dimensions"]["responseCode"]: d["sum"]["queryCount"] for d in by_code}
+    code_map  = {d["dimensions"]["responseCode"]: d["count"] for d in by_code}
     noerror   = code_map.get("NOERROR",  0)
     nxdomain  = code_map.get("NXDOMAIN", 0)
     servfail  = code_map.get("SERVFAIL", 0)
@@ -280,7 +298,7 @@ class ReportGenerator:
         frequency   = period["frequency"]
 
         charts = {
-            "volume":   chart_query_volume(analytics.get("byDate", [])),
+            "volume":   chart_query_volume(analytics.get("byDate", []), analytics.get("byCacheStatus", [])),
             "types":    chart_query_types(analytics.get("byQueryType", [])),
             "codes":    chart_response_codes(analytics.get("byResponseCode", [])),
             "domains":  chart_top_domains(analytics.get("byQueryName", [])),

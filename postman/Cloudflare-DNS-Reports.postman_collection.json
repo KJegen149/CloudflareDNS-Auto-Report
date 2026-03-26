@@ -98,13 +98,31 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query DnsVolumeByDay($zoneTag: String!, $startDate: Date!, $endDate: Date!) {\\n  viewer {\\n    zones(filter: { zoneTag: $zoneTag }) {\\n      byDate: dnsAnalyticsAdaptiveGroups(\\n        limit: 5000\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [date_ASC]\\n      ) {\\n        dimensions { date }\\n        sum { queryCount uncachedCount staleCount }\\n      }\\n    }\\n  }\\n}\",\n  \"variables\": {\n    \"zoneTag\": \"{{CF_ZONE_ID}}\",\n    \"startDate\": \"{{START_DATE}}\",\n    \"endDate\": \"{{END_DATE}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query DnsVolumeByDay($zoneTag: String!, $startDate: Date!, $endDate: Date!) {\\n  viewer {\\n    zones(filter: { zoneTag: $zoneTag }) {\\n      byDate: dnsAnalyticsAdaptiveGroups(\\n        limit: 5000\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [date_ASC]\\n      ) {\\n        dimensions { date }\\n        count\\n      }\\n    }\\n  }\\n}\",\n  \"variables\": {\n    \"zoneTag\": \"{{CF_ZONE_ID}}\",\n    \"startDate\": \"{{START_DATE}}\",\n    \"endDate\": \"{{END_DATE}}\"\n  }\n}"
             },
             "url": {
               "raw": "{{CF_GRAPHQL}}",
               "host": ["{{CF_GRAPHQL}}"]
             },
-            "description": "Time-series DNS query volume. Returns queryCount + uncachedCount per day."
+            "description": "Time-series DNS query count per day. Uses the correct `count` field (not sum.queryCount)."
+          }
+        },
+        {
+          "name": "Cache Hit vs Miss",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query DnsCacheStatus($zoneTag: String!, $startDate: Date!, $endDate: Date!) {\\n  viewer {\\n    zones(filter: { zoneTag: $zoneTag }) {\\n      byCacheStatus: dnsAnalyticsAdaptiveGroups(\\n        limit: 5\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [count_DESC]\\n      ) {\\n        dimensions { responseCached }\\n        count\\n      }\\n    }\\n  }\\n}\",\n  \"variables\": {\n    \"zoneTag\": \"{{CF_ZONE_ID}}\",\n    \"startDate\": \"{{START_DATE}}\",\n    \"endDate\": \"{{END_DATE}}\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{CF_GRAPHQL}}",
+              "host": ["{{CF_GRAPHQL}}"]
+            },
+            "description": "Cache hit vs miss breakdown. responseCached=true means served from cache."
           }
         },
         {
@@ -116,7 +134,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query TopDomains($zoneTag: String!, $startDate: Date!, $endDate: Date!) {\\n  viewer {\\n    zones(filter: { zoneTag: $zoneTag }) {\\n      byQueryName: dnsAnalyticsAdaptiveGroups(\\n        limit: 15\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [sum_queryCount_DESC]\\n      ) {\\n        dimensions { queryName }\\n        sum { queryCount }\\n      }\\n    }\\n  }\\n}\",\n  \"variables\": {\n    \"zoneTag\": \"{{CF_ZONE_ID}}\",\n    \"startDate\": \"{{START_DATE}}\",\n    \"endDate\": \"{{END_DATE}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query TopDomains($zoneTag: String!, $startDate: Date!, $endDate: Date!) {\\n  viewer {\\n    zones(filter: { zoneTag: $zoneTag }) {\\n      byQueryName: dnsAnalyticsAdaptiveGroups(\\n        limit: 15\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [count_DESC]\\n      ) {\\n        dimensions { queryName }\\n        count\\n      }\\n    }\\n  }\\n}\",\n  \"variables\": {\n    \"zoneTag\": \"{{CF_ZONE_ID}}\",\n    \"startDate\": \"{{START_DATE}}\",\n    \"endDate\": \"{{END_DATE}}\"\n  }\n}"
             },
             "url": {
               "raw": "{{CF_GRAPHQL}}",
@@ -134,7 +152,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query QueryTypes($zoneTag: String!, $startDate: Date!, $endDate: Date!) {\\n  viewer {\\n    zones(filter: { zoneTag: $zoneTag }) {\\n      byQueryType: dnsAnalyticsAdaptiveGroups(\\n        limit: 20\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [sum_queryCount_DESC]\\n      ) {\\n        dimensions { queryType }\\n        sum { queryCount }\\n      }\\n    }\\n  }\\n}\",\n  \"variables\": {\n    \"zoneTag\": \"{{CF_ZONE_ID}}\",\n    \"startDate\": \"{{START_DATE}}\",\n    \"endDate\": \"{{END_DATE}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query QueryTypes($zoneTag: String!, $startDate: Date!, $endDate: Date!) {\\n  viewer {\\n    zones(filter: { zoneTag: $zoneTag }) {\\n      byQueryType: dnsAnalyticsAdaptiveGroups(\\n        limit: 20\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [count_DESC]\\n      ) {\\n        dimensions { queryType }\\n        count\\n      }\\n    }\\n  }\\n}\",\n  \"variables\": {\n    \"zoneTag\": \"{{CF_ZONE_ID}}\",\n    \"startDate\": \"{{START_DATE}}\",\n    \"endDate\": \"{{END_DATE}}\"\n  }\n}"
             },
             "url": {
               "raw": "{{CF_GRAPHQL}}",
@@ -152,7 +170,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query ResponseCodes($zoneTag: String!, $startDate: Date!, $endDate: Date!) {\\n  viewer {\\n    zones(filter: { zoneTag: $zoneTag }) {\\n      byResponseCode: dnsAnalyticsAdaptiveGroups(\\n        limit: 20\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [sum_queryCount_DESC]\\n      ) {\\n        dimensions { responseCode }\\n        sum { queryCount }\\n      }\\n    }\\n  }\\n}\",\n  \"variables\": {\n    \"zoneTag\": \"{{CF_ZONE_ID}}\",\n    \"startDate\": \"{{START_DATE}}\",\n    \"endDate\": \"{{END_DATE}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query ResponseCodes($zoneTag: String!, $startDate: Date!, $endDate: Date!) {\\n  viewer {\\n    zones(filter: { zoneTag: $zoneTag }) {\\n      byResponseCode: dnsAnalyticsAdaptiveGroups(\\n        limit: 20\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [count_DESC]\\n      ) {\\n        dimensions { responseCode }\\n        count\\n      }\\n    }\\n  }\\n}\",\n  \"variables\": {\n    \"zoneTag\": \"{{CF_ZONE_ID}}\",\n    \"startDate\": \"{{START_DATE}}\",\n    \"endDate\": \"{{END_DATE}}\"\n  }\n}"
             },
             "url": {
               "raw": "{{CF_GRAPHQL}}",
@@ -170,13 +188,13 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"query\": \"query DnsFullReport($zoneTag: String!, $startDate: Date!, $endDate: Date!) {\\n  viewer {\\n    zones(filter: { zoneTag: $zoneTag }) {\\n      byDate: dnsAnalyticsAdaptiveGroups(\\n        limit: 5000\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [date_ASC]\\n      ) {\\n        dimensions { date }\\n        sum { queryCount uncachedCount staleCount }\\n      }\\n      byQueryType: dnsAnalyticsAdaptiveGroups(\\n        limit: 20\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [sum_queryCount_DESC]\\n      ) {\\n        dimensions { queryType }\\n        sum { queryCount }\\n      }\\n      byResponseCode: dnsAnalyticsAdaptiveGroups(\\n        limit: 20\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [sum_queryCount_DESC]\\n      ) {\\n        dimensions { responseCode }\\n        sum { queryCount }\\n      }\\n      byQueryName: dnsAnalyticsAdaptiveGroups(\\n        limit: 15\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [sum_queryCount_DESC]\\n      ) {\\n        dimensions { queryName }\\n        sum { queryCount }\\n      }\\n    }\\n  }\\n}\",\n  \"variables\": {\n    \"zoneTag\": \"{{CF_ZONE_ID}}\",\n    \"startDate\": \"{{START_DATE}}\",\n    \"endDate\": \"{{END_DATE}}\"\n  }\n}"
+              "raw": "{\n  \"query\": \"query DnsFullReport($zoneTag: String!, $startDate: Date!, $endDate: Date!) {\\n  viewer {\\n    zones(filter: { zoneTag: $zoneTag }) {\\n      byDate: dnsAnalyticsAdaptiveGroups(\\n        limit: 5000\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [date_ASC]\\n      ) {\\n        dimensions { date }\\n        count\\n      }\\n      byQueryType: dnsAnalyticsAdaptiveGroups(\\n        limit: 20\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [count_DESC]\\n      ) {\\n        dimensions { queryType }\\n        count\\n      }\\n      byResponseCode: dnsAnalyticsAdaptiveGroups(\\n        limit: 20\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [count_DESC]\\n      ) {\\n        dimensions { responseCode }\\n        count\\n      }\\n      byQueryName: dnsAnalyticsAdaptiveGroups(\\n        limit: 15\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [count_DESC]\\n      ) {\\n        dimensions { queryName }\\n        count\\n      }\\n      byCacheStatus: dnsAnalyticsAdaptiveGroups(\\n        limit: 5\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [count_DESC]\\n      ) {\\n        dimensions { responseCached }\\n        count\\n      }\\n    }\\n  }\\n}\",\n  \"variables\": {\n    \"zoneTag\": \"{{CF_ZONE_ID}}\",\n    \"startDate\": \"{{START_DATE}}\",\n    \"endDate\": \"{{END_DATE}}\"\n  }\n}"
             },
             "url": {
               "raw": "{{CF_GRAPHQL}}",
               "host": ["{{CF_GRAPHQL}}"]
             },
-            "description": "The full combined GraphQL query used by the report system — all four datasets in one round-trip using aliased fields."
+            "description": "The full combined GraphQL query used by the report system — all five datasets in one round-trip using aliased fields. Uses `count` (correct field) instead of the invalid `sum.queryCount`."
           }
         },
         {

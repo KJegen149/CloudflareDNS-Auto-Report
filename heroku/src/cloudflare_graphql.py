@@ -37,31 +37,39 @@ query DnsReport($zoneTag: String!, $startDate: Date!, $endDate: Date!) {
         orderBy: [date_ASC]
       ) {
         dimensions { date }
-        sum { queryCount uncachedCount staleCount }
+        count
       }
       byQueryType: dnsAnalyticsAdaptiveGroups(
         limit: 20
         filter: { date_geq: $startDate, date_leq: $endDate }
-        orderBy: [sum_queryCount_DESC]
+        orderBy: [count_DESC]
       ) {
         dimensions { queryType }
-        sum { queryCount }
+        count
       }
       byResponseCode: dnsAnalyticsAdaptiveGroups(
         limit: 20
         filter: { date_geq: $startDate, date_leq: $endDate }
-        orderBy: [sum_queryCount_DESC]
+        orderBy: [count_DESC]
       ) {
         dimensions { responseCode }
-        sum { queryCount }
+        count
       }
       byQueryName: dnsAnalyticsAdaptiveGroups(
         limit: 15
         filter: { date_geq: $startDate, date_leq: $endDate }
-        orderBy: [sum_queryCount_DESC]
+        orderBy: [count_DESC]
       ) {
         dimensions { queryName }
-        sum { queryCount }
+        count
+      }
+      byCacheStatus: dnsAnalyticsAdaptiveGroups(
+        limit: 5
+        filter: { date_geq: $startDate, date_leq: $endDate }
+        orderBy: [count_DESC]
+      ) {
+        dimensions { responseCached }
+        count
       }
     }
   }
@@ -167,7 +175,7 @@ class CloudflareClient:
         zones = result.get("data", {}).get("viewer", {}).get("zones", [])
         if not zones:
             logger.warning("No DNS analytics data returned for zone %s (%s – %s)", zone_id, start_date, end_date)
-            return {"byDate": [], "byQueryType": [], "byResponseCode": [], "byQueryName": []}
+            return {"byDate": [], "byQueryType": [], "byResponseCode": [], "byQueryName": [], "byCacheStatus": []}
 
         return zones[0]
 
