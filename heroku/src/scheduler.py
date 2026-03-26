@@ -25,6 +25,10 @@ def _make_trigger(schedule: dict) -> CronTrigger:
     hour      = schedule.get("hour_utc", 8)
     minute    = schedule.get("minute_utc", 0)
 
+    if frequency == "hourly":
+        # Fires every hour at :00. Intended for testing — remove in production.
+        return CronTrigger(minute=0, timezone="UTC")
+
     if frequency == "daily":
         return CronTrigger(hour=hour, minute=minute, timezone="UTC")
 

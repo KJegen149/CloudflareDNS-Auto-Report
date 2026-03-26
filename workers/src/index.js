@@ -44,6 +44,7 @@ import { processAccount } from './lib/report-builder.js';
 
 /** Map cron expressions to frequency strings. */
 const CRON_TO_FREQUENCY = {
+  '0 * * * *': 'hourly',   // testing only — remove in production
   '0 8 * * *': 'daily',
   '0 8 * * 1': 'weekly',
   '0 8 1 * *': 'monthly',

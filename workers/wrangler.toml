@@ -9,6 +9,7 @@ account_id = "9f86f3b73ff40da02bce7f31c93e98bd"
 # pattern that fired and only generates reports for matching accounts.
 [triggers]
 crons = [
+  "0 * * * *",   # hourly  — every hour at :00 (for testing; disable in production)
   "0 8 * * *",   # daily   — every day at 08:00 UTC
   "0 8 * * 1",   # weekly  — every Monday at 08:00 UTC
   "0 8 1 * *",   # monthly — 1st of every month at 08:00 UTC
