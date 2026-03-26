@@ -1,0 +1,42 @@
+name = "cloudflare-dns-auto-report"
+main = "src/index.js"
+compatibility_date = "2026-03-26"
+
+# ── Cron triggers ────────────────────────────────────────────────────────────
+# Three triggers fire at 08:00 UTC on their respective schedules.
+# The worker checks each account's configured frequency against the cron
+# pattern that fired and only generates reports for matching accounts.
+[triggers]
+crons = [
+  "0 8 * * *",   # daily   — every day at 08:00 UTC
+  "0 8 * * 1",   # weekly  — every Monday at 08:00 UTC
+  "0 8 1 * *",   # monthly — 1st of every month at 08:00 UTC
+]
+
+# ── KV namespace (stores non-secret account config) ──────────────────────────
+# Run: npx wrangler kv namespace create DNS_REPORT_CONFIG
+# Then replace the id below with the output ID.
+[[kv_namespaces]]
+binding = "DNS_REPORT_CONFIG"
+id      = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+# Preview namespace for local dev (wrangler dev)
+# Run: npx wrangler kv namespace create DNS_REPORT_CONFIG --preview
+preview_id = "REPLACE_WITH_YOUR_PREVIEW_KV_NAMESPACE_ID"
+
+# ── Secrets (set via: npx wrangler secret put SECRET_NAME) ──────────────────
+# List the secrets your worker uses so wrangler validates them at deploy time.
+# Never put actual values here — use `wrangler secret put`.
+[secrets]
+# Cloudflare API tokens (one per account, named to match api_token_secret in KV config):
+#   wrangler secret put CF_TOKEN_APPLE_JUICE
+#   wrangler secret put CF_TOKEN_ORANGE_JUICE
+#
+# Email API key (Resend):
+#   wrangler secret put RESEND_API_KEY
+#   wrangler secret put EMAIL_FROM_ADDRESS
+#   wrangler secret put EMAIL_FROM_NAME
+
+# ── Observability ─────────────────────────────────────────────────────────────
+[observability]
+enabled = true
