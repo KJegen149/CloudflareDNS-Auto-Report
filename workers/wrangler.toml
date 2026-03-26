@@ -1,6 +1,7 @@
 name = "cloudflare-dns-auto-report"
 main = "src/index.js"
 compatibility_date = "2026-03-26"
+account_id = "9f86f3b73ff40da02bce7f31c93e98bd"
 
 # ── Cron triggers ────────────────────────────────────────────────────────────
 # Three triggers fire at 08:00 UTC on their respective schedules.
@@ -14,15 +15,10 @@ crons = [
 ]
 
 # ── KV namespace (stores non-secret account config) ──────────────────────────
-# Run: npx wrangler kv namespace create DNS_REPORT_CONFIG
-# Then replace the id below with the output ID.
 [[kv_namespaces]]
-binding = "DNS_REPORT_CONFIG"
-id      = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
-
-# Preview namespace for local dev (wrangler dev)
-# Run: npx wrangler kv namespace create DNS_REPORT_CONFIG --preview
-preview_id = "REPLACE_WITH_YOUR_PREVIEW_KV_NAMESPACE_ID"
+binding    = "DNS_REPORT_CONFIG"
+id         = "386e4fff563a47f3bcf7af1f2581f8c7"
+preview_id = "af4c81a8c8d747d29d0eafc4f33a7221"
 
 # ── Secrets (set via: npx wrangler secret put SECRET_NAME) ──────────────────
 # List the secrets your worker uses so wrangler validates them at deploy time.
