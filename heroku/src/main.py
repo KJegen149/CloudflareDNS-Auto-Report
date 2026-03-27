@@ -170,8 +170,10 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    config   = load_config(args.config)
-    accounts = config["accounts"]
+    # Only resolve SMTP credentials for modes that actually send email
+    need_smtp = bool(args.run_now) or (not args.preview and not args.run_now)
+    config    = load_config(args.config, require_smtp=need_smtp)
+    accounts  = config["accounts"]
 
     if not accounts:
         logger.error("No accounts configured. Check your accounts.json.")

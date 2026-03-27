@@ -40,7 +40,7 @@ def _resolve_smtp_profile(profile: dict, profile_name: str) -> dict:
     return resolved
 
 
-def load_config(config_path: str | None = None) -> dict:
+def load_config(config_path: str | None = None, require_smtp: bool = False) -> dict:
     """
     Load and validate the accounts config file.
 
@@ -48,14 +48,17 @@ def load_config(config_path: str | None = None) -> dict:
     rest of the application never needs to touch os.environ directly.
 
     Args:
-        config_path: Path to accounts.json. Falls back to ACCOUNTS_CONFIG_PATH
-                     env var, then 'config/accounts.json' relative to cwd.
+        config_path:  Path to accounts.json. Falls back to ACCOUNTS_CONFIG_PATH
+                      env var, then 'config/accounts.json' relative to cwd.
+        require_smtp: When True (email-sending modes), SMTP profiles are fully
+                      resolved and validated. When False (--preview), SMTP is
+                      skipped so no email credentials are needed.
 
     Returns:
         Dict with structure:
         {
             "accounts": [...],     # fully resolved account configs
-            "smtp_profiles": {...} # fully resolved SMTP profile dicts
+            "smtp_profiles": {...} # fully resolved SMTP profile dicts (empty if require_smtp=False)
         }
     """
     if config_path is None:
@@ -71,14 +74,15 @@ def load_config(config_path: str | None = None) -> dict:
     with path.open() as f:
         raw = json.load(f)
 
-    # ── Resolve SMTP profiles ──────────────────────────────────────────────────
-    smtp_profiles_raw = raw.get("smtp_profiles", {})
+    # ── Resolve SMTP profiles (only when sending email) ────────────────────────
     smtp_profiles = {}
-    for name, profile in smtp_profiles_raw.items():
-        try:
-            smtp_profiles[name] = _resolve_smtp_profile(profile, name)
-        except ConfigError as e:
-            raise ConfigError(f"SMTP profile '{name}': {e}") from e
+    if require_smtp:
+        smtp_profiles_raw = raw.get("smtp_profiles", {})
+        for name, profile in smtp_profiles_raw.items():
+            try:
+                smtp_profiles[name] = _resolve_smtp_profile(profile, name)
+            except ConfigError as e:
+                raise ConfigError(f"SMTP profile '{name}': {e}") from e
 
     # ── Resolve per-account secrets ────────────────────────────────────────────
     accounts = []
@@ -91,18 +95,17 @@ def load_config(config_path: str | None = None) -> dict:
 
         api_token = _resolve_env(token_env_name, f"accounts[{account_id}].cloudflare_api_token_env")
 
-        smtp_profile_name = raw_account.get("email", {}).get("smtp_profile", "default")
-        if smtp_profile_name not in smtp_profiles:
-            raise ConfigError(
-                f"Account '{account_id}' references smtp_profile '{smtp_profile_name}' "
-                "which is not defined in smtp_profiles."
-            )
+        account = {**raw_account, "cloudflare_api_token": api_token}
 
-        account = {
-            **raw_account,
-            "cloudflare_api_token": api_token,
-            "smtp": smtp_profiles[smtp_profile_name],
-        }
+        if require_smtp:
+            smtp_profile_name = raw_account.get("email", {}).get("smtp_profile", "default")
+            if smtp_profile_name not in smtp_profiles:
+                raise ConfigError(
+                    f"Account '{account_id}' references smtp_profile '{smtp_profile_name}' "
+                    "which is not defined in smtp_profiles."
+                )
+            account["smtp"] = smtp_profiles[smtp_profile_name]
+
         accounts.append(account)
         logger.debug("Loaded account config: %s (%s)", account_id, raw_account.get("display_name"))
 
