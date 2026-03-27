@@ -81,6 +81,48 @@ class CloudflareAPIError(Exception):
     pass
 
 
+def _merge_analytics(chunks: list) -> dict:
+    """Merge multiple weekly analytics chunks into one combined result."""
+    by_date   = []
+    by_type   = {}
+    by_code   = {}
+    by_name   = {}
+    by_cache  = {}
+
+    for chunk in chunks:
+        by_date.extend(chunk.get("byDate", []))
+
+        for row in chunk.get("byQueryType", []):
+            k = row["dimensions"]["queryType"]
+            by_type[k] = by_type.get(k, 0) + row["count"]
+
+        for row in chunk.get("byResponseCode", []):
+            k = row["dimensions"]["responseCode"]
+            by_code[k] = by_code.get(k, 0) + row["count"]
+
+        for row in chunk.get("byQueryName", []):
+            k = row["dimensions"]["queryName"]
+            by_name[k] = by_name.get(k, 0) + row["count"]
+
+        for row in chunk.get("byCacheStatus", []):
+            k = row["dimensions"]["responseCached"]
+            by_cache[k] = by_cache.get(k, 0) + row["count"]
+
+    def _to_rows(agg: dict, dim_key: str, limit: int) -> list:
+        return [
+            {"dimensions": {dim_key: k}, "count": v}
+            for k, v in sorted(agg.items(), key=lambda x: -x[1])
+        ][:limit]
+
+    return {
+        "byDate":         by_date,
+        "byQueryType":    _to_rows(by_type,  "queryType",     20),
+        "byResponseCode": _to_rows(by_code,  "responseCode",  20),
+        "byQueryName":    _to_rows(by_name,  "queryName",     15),
+        "byCacheStatus":  _to_rows(by_cache, "responseCached", 5),
+    }
+
+
 class CloudflareClient:
     """Thread-safe Cloudflare API client for a single API token."""
 
@@ -144,19 +186,36 @@ class CloudflareClient:
 
     # ── GraphQL analytics ──────────────────────────────────────────────────────
 
+    _CHUNK_DAYS = 7  # Cloudflare enforces a 1-week max window per zone query
+
     def get_dns_analytics(self, zone_id: str, start_date: str, end_date: str) -> dict:
         """
         Fetch DNS query analytics via GraphQL.
 
-        Args:
-            zone_id:    Cloudflare zone ID.
-            start_date: ISO date string, e.g. '2026-03-01'.
-            end_date:   ISO date string, e.g. '2026-03-25'.
+        Cloudflare caps zone-level dnsAnalyticsAdaptiveGroups queries at 7 days.
+        Ranges wider than that are automatically split into weekly chunks and merged.
 
         Returns:
-            Dict with keys byDate, byQueryType, byResponseCode, byQueryName.
-            Each is a list of grouped rows from dnsAnalyticsAdaptiveGroups.
+            Dict with keys byDate, byQueryType, byResponseCode, byQueryName, byCacheStatus.
         """
+        start = date.fromisoformat(start_date)
+        end   = date.fromisoformat(end_date)
+
+        if (end - start).days < self._CHUNK_DAYS:
+            return self._fetch_analytics_chunk(zone_id, start_date, end_date)
+
+        # Split into ≤7-day windows, fetch each, then merge
+        chunks = []
+        cur = start
+        while cur <= end:
+            chunk_end = min(cur + timedelta(days=self._CHUNK_DAYS - 1), end)
+            logger.debug("Fetching analytics chunk %s → %s for zone %s", cur, chunk_end, zone_id)
+            chunks.append(self._fetch_analytics_chunk(zone_id, cur.isoformat(), chunk_end.isoformat()))
+            cur = chunk_end + timedelta(days=1)
+
+        return _merge_analytics(chunks)
+
+    def _fetch_analytics_chunk(self, zone_id: str, start_date: str, end_date: str) -> dict:
         payload = {
             "query": DNS_ANALYTICS_QUERY,
             "variables": {
@@ -174,7 +233,7 @@ class CloudflareClient:
 
         zones = result.get("data", {}).get("viewer", {}).get("zones", [])
         if not zones:
-            logger.warning("No DNS analytics data returned for zone %s (%s – %s)", zone_id, start_date, end_date)
+            logger.warning("No DNS analytics data for zone %s (%s – %s)", zone_id, start_date, end_date)
             return {"byDate": [], "byQueryType": [], "byResponseCode": [], "byQueryName": [], "byCacheStatus": []}
 
         return zones[0]
