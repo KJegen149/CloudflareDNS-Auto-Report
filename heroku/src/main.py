@@ -33,7 +33,7 @@ from .config_loader import load_config
 from .cloudflare_graphql import CloudflareClient
 from .report_generator import ReportGenerator, compute_metrics
 from .pdf_generator import html_to_pdf
-from .email_sender import send_report, build_email_body, build_subject
+from .email_sender import send_report, build_subject
 from .scheduler import build_scheduler
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -108,30 +108,29 @@ def _save_locally(account: dict, out_dir: Path, open_browser: bool) -> None:
 
 
 def _generate_and_send(account: dict) -> None:
-    """Full pipeline: fetch → render → PDF → email for one account."""
+    """Full pipeline: fetch → render → (optional PDF) → email for one account."""
     for report_data, zone, metrics, html in _fetch_and_render(account):
         zone_name  = zone.get("zone_name", zone["zone_id"])
         period     = report_data["period"]
         frequency  = period["frequency"]
 
+        # Try PDF — attach it if successful, send HTML-only if not
+        pdf_bytes = None
+        pdf_filename = None
         try:
-            pdf_bytes = html_to_pdf(html)
-        except Exception:
-            logger.exception("PDF generation failed for zone %s — skipping", zone_name)
-            continue
+            pdf_bytes    = html_to_pdf(html)
+            pdf_filename = (
+                f"dns-report-{zone_name}-{frequency}-{period['end']}.pdf"
+                .replace(" ", "_")
+            )
+        except Exception as exc:
+            logger.warning("PDF generation skipped (%s) — sending HTML email only.", exc)
 
         recipients = account.get("email", {}).get("recipients", [])
         subject    = build_subject(account, zone_name, frequency, period)
-        body       = build_email_body(
-            account.get("display_name", ""), zone_name, frequency, metrics, period
-        )
-        filename   = (
-            f"dns-report-{zone_name}-{frequency}-{period['end']}.pdf"
-            .replace(" ", "_")
-        )
 
         try:
-            send_report(account["smtp"], recipients, subject, body, pdf_bytes, filename)
+            send_report(account["smtp"], recipients, subject, html, pdf_bytes, pdf_filename)
         except Exception:
             logger.exception("Email delivery failed for zone %s", zone_name)
 
