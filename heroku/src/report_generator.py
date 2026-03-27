@@ -64,6 +64,16 @@ def _human(n: int) -> str:
     return str(n)
 
 
+def _human_bytes(n: int) -> str:
+    if n >= 1_073_741_824:
+        return f"{n/1_073_741_824:.1f} GB"
+    if n >= 1_048_576:
+        return f"{n/1_048_576:.1f} MB"
+    if n >= 1_024:
+        return f"{n/1_024:.1f} KB"
+    return f"{n} B"
+
+
 def _human_fmt(val, _pos):
     return _human(int(val))
 
@@ -229,6 +239,80 @@ def chart_top_domains(by_name: list) -> Optional[str]:
     return _fig_to_b64(fig)
 
 
+def chart_dns_by_colo(by_colo: list) -> Optional[str]:
+    """Horizontal bar chart for top Cloudflare data centers serving DNS queries."""
+    if not by_colo:
+        return None
+
+    items  = by_colo[:10]
+    names  = [d["dimensions"]["coloName"] for d in items]
+    counts = [d["count"] for d in items]
+    display = names[::-1]
+    counts_r = counts[::-1]
+
+    fig, ax = plt.subplots(figsize=(9, max(3.5, len(items) * 0.5 + 1.5)))
+    fig.patch.set_facecolor("white")
+    _style_ax(ax)
+    ax.grid(axis="x", alpha=0.25, linestyle="--", zorder=0)
+    ax.grid(axis="y", alpha=0, zorder=0)
+
+    y = list(range(len(display)))
+    bars = ax.barh(y, counts_r, color=FOREST_GREEN, alpha=0.85, zorder=3)
+
+    for bar, count in zip(bars, counts_r):
+        ax.text(
+            bar.get_width() * 1.008, bar.get_y() + bar.get_height() / 2,
+            _human(count), va="center", ha="left", fontsize=7, color=GRAY,
+        )
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(display, fontsize=9)
+    ax.set_xlabel("DNS Queries", fontsize=9, color=GRAY)
+    ax.set_title("DNS Queries by Data Center", fontsize=13, fontweight="bold", color=NEAR_BLACK, pad=10)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(_human_fmt))
+    ax.tick_params(axis="y", which="both", length=0)
+
+    plt.tight_layout()
+    return _fig_to_b64(fig)
+
+
+def chart_top_countries(by_country: list) -> Optional[str]:
+    """Horizontal bar chart for top countries by HTTP request volume."""
+    if not by_country:
+        return None
+
+    items  = by_country[:10]
+    names  = [d["dimensions"].get("clientCountryName") or "Unknown" for d in items]
+    counts = [d["count"] for d in items]
+    display = names[::-1]
+    counts_r = counts[::-1]
+
+    fig, ax = plt.subplots(figsize=(9, max(3.5, len(items) * 0.5 + 1.5)))
+    fig.patch.set_facecolor("white")
+    _style_ax(ax)
+    ax.grid(axis="x", alpha=0.25, linestyle="--", zorder=0)
+    ax.grid(axis="y", alpha=0, zorder=0)
+
+    y = list(range(len(display)))
+    bars = ax.barh(y, counts_r, color=BURGUNDY, alpha=0.85, zorder=3)
+
+    for bar, count in zip(bars, counts_r):
+        ax.text(
+            bar.get_width() * 1.008, bar.get_y() + bar.get_height() / 2,
+            _human(count), va="center", ha="left", fontsize=7, color=GRAY,
+        )
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(display, fontsize=9)
+    ax.set_xlabel("HTTP Requests", fontsize=9, color=GRAY)
+    ax.set_title("Top Countries by Traffic", fontsize=13, fontweight="bold", color=NEAR_BLACK, pad=10)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(_human_fmt))
+    ax.tick_params(axis="y", which="both", length=0)
+
+    plt.tight_layout()
+    return _fig_to_b64(fig)
+
+
 # ── Summary metrics ────────────────────────────────────────────────────────────
 
 def compute_metrics(analytics: dict, dns_records: list) -> dict:
@@ -292,19 +376,26 @@ class ReportGenerator:
         zone_config: dict,
         report_data: dict,
     ) -> str:
-        analytics   = report_data["analytics"]
-        dns_records = report_data["dns_records"]
-        period      = report_data["period"]
-        frequency   = period["frequency"]
+        analytics     = report_data["analytics"]
+        dns_records   = report_data["dns_records"]
+        period        = report_data["period"]
+        frequency     = period["frequency"]
+        http_security = report_data.get("http_security", {})
 
         charts = {
-            "volume":   chart_query_volume(analytics.get("byDate", []), analytics.get("byCacheStatus", [])),
-            "types":    chart_query_types(analytics.get("byQueryType", [])),
-            "codes":    chart_response_codes(analytics.get("byResponseCode", [])),
-            "domains":  chart_top_domains(analytics.get("byQueryName", [])),
+            "volume":    chart_query_volume(analytics.get("byDate", []), analytics.get("byCacheStatus", [])),
+            "types":     chart_query_types(analytics.get("byQueryType", [])),
+            "codes":     chart_response_codes(analytics.get("byResponseCode", [])),
+            "domains":   chart_top_domains(analytics.get("byQueryName", [])),
+            "colo":      chart_dns_by_colo(analytics.get("byColo", [])),
+            "countries": chart_top_countries(http_security.get("byCountry", [])),
         }
 
         metrics = compute_metrics(analytics, dns_records)
+
+        # Extract HTTP totals (single aggregate row)
+        http_totals_rows = http_security.get("httpTotals", [])
+        http_totals = http_totals_rows[0] if http_totals_rows else None
 
         sorted_records = sorted(
             dns_records, key=lambda r: (r.get("type", ""), r.get("name", ""))
@@ -328,6 +419,9 @@ class ReportGenerator:
             metrics        = metrics,
             charts         = charts,
             analytics      = analytics,
+            http_security  = http_security,
+            http_totals    = http_totals,
+            human_bytes    = _human_bytes,
             dns_records    = sorted_records,
             generated_at   = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
             report_title   = account_config.get("report", {}).get(

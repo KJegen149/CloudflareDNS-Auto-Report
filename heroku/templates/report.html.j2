@@ -282,12 +282,11 @@ tbody td.mono {
 
 {# ═══════════════════════════════════════════════════════ HEADER ═══ #}
 <div class="report-header">
-  <div class="brand">Cloudflare DNS Analytics</div>
+  <div class="brand">Cloudflare Website &amp; DNS Report</div>
   <h1>{{ report_title }}</h1>
   <div class="meta">
     <span>{{ zone_info.name | default(zone.zone_name) }}</span>
     <span>{{ frequency }} Report</span>
-    <span>{{ zone_info.plan.name | default("") }}</span>
   </div>
   <div class="badge">{{ frequency }}</div>
 </div>
@@ -300,38 +299,58 @@ tbody td.mono {
 <div class="content">
 
 {# ═══════════════════════════════════════════════════ SUMMARY CARDS ═ #}
+{# Compute totals needed for cards #}
+{% set ns = namespace(blocked=0) %}
+{% for row in http_security.get('securityByAction', []) %}
+  {% if row.dimensions.action in ['block', 'managed_challenge', 'challenge', 'jschallenge'] %}
+    {% set ns.blocked = ns.blocked + row.count %}
+  {% endif %}
+{% endfor %}
+
 <div class="section">
-  <div class="section-title">Summary</div>
+  <div class="section-title">At a Glance</div>
   <div class="cards">
 
     <div class="card">
       <div class="card-value">{{ metrics.total_queries | human }}</div>
-      <div class="card-label">Total Queries</div>
+      <div class="card-label">DNS Lookups</div>
+    </div>
+
+    {% if http_totals %}
+    <div class="card blue">
+      <div class="card-value">{{ http_totals.uniq.uniques | human }}</div>
+      <div class="card-label">Unique Visitors</div>
+    </div>
+
+    <div class="card blue">
+      <div class="card-value">{{ http_totals.sum.visits | human }}</div>
+      <div class="card-label">Total Visits</div>
+    </div>
+    {% endif %}
+
+    {% if ns.blocked > 0 %}
+    <div class="card red">
+      <div class="card-value">{{ ns.blocked | human }}</div>
+      <div class="card-label">Threats Blocked</div>
+    </div>
+    {% endif %}
+
+    <div class="card green">
+      <div class="card-value">{{ metrics.success_pct | pct }}</div>
+      <div class="card-label">Resolution Success</div>
     </div>
 
     <div class="card blue">
       <div class="card-value">{{ metrics.cache_hit_pct | pct }}</div>
-      <div class="card-label">Cache Hit Rate</div>
+      <div class="card-label">Cache Performance</div>
     </div>
 
-    <div class="card green">
-      <div class="card-value">{{ metrics.success_pct | pct }}</div>
-      <div class="card-label">Success Rate</div>
-    </div>
-
-    {% if metrics.nxdomain_pct > 5.0 %}
-    <div class="card amber">
-    {% else %}
+    {% if http_totals and http_totals.sum.edgeResponseBytes %}
     <div class="card">
+      <div class="card-value">{{ human_bytes(http_totals.sum.edgeResponseBytes) }}</div>
+      <div class="card-label">Bandwidth Served</div>
+    </div>
     {% endif %}
-      <div class="card-value">{{ metrics.nxdomain_pct | pct }}</div>
-      <div class="card-label">NXDOMAIN Rate</div>
-    </div>
-
-    <div class="card">
-      <div class="card-value">{{ metrics.total_dns_records }}</div>
-      <div class="card-label">DNS Records</div>
-    </div>
 
   </div>
 </div>
@@ -339,9 +358,28 @@ tbody td.mono {
 {# ═══════════════════════════════════════════════ QUERY VOLUME CHART ═ #}
 {% if charts.volume %}
 <div class="section">
-  <div class="section-title">Query Volume</div>
+  <div class="section-title">DNS Activity Over Time</div>
   <div class="chart-full">
-    <img class="chart-img" src="data:image/png;base64,{{ charts.volume }}" alt="Query Volume by Day">
+    <img class="chart-img" src="data:image/png;base64,{{ charts.volume }}" alt="DNS Activity Over Time">
+  </div>
+</div>
+{% endif %}
+
+{# ════════════════════════════════════ TRAFFIC & GEOGRAPHY (2-up) ════ #}
+{% if charts.countries or charts.colo %}
+<div class="section">
+  <div class="section-title">Traffic &amp; Geography</div>
+  <div class="chart-row">
+    {% if charts.countries %}
+    <div class="chart-half">
+      <img class="chart-img" src="data:image/png;base64,{{ charts.countries }}" alt="Top Countries by Traffic">
+    </div>
+    {% endif %}
+    {% if charts.colo %}
+    <div class="chart-half">
+      <img class="chart-img" src="data:image/png;base64,{{ charts.colo }}" alt="DNS Queries by Data Center">
+    </div>
+    {% endif %}
   </div>
 </div>
 {% endif %}
@@ -349,117 +387,44 @@ tbody td.mono {
 {# ══════════════════════════════════════════════ TOP DOMAINS CHART ═══ #}
 {% if charts.domains %}
 <div class="section">
-  <div class="section-title">Top Queried Domains</div>
+  <div class="section-title">Most Active Services &amp; Domains</div>
   <div class="chart-full">
-    <img class="chart-img" src="data:image/png;base64,{{ charts.domains }}" alt="Top Queried Domains">
+    <img class="chart-img" src="data:image/png;base64,{{ charts.domains }}" alt="Most Active Services">
   </div>
 </div>
 {% endif %}
 
-{# ═══════════════════════════════════════════ BREAKDOWN CHARTS (2-up) ═ #}
-{% if charts.types or charts.codes %}
+{# ══════════════════════════════════════════════ SECURITY EVENTS ═════ #}
+{% set sec_events = http_security.get('securityByAction', []) %}
+{% if sec_events %}
 <div class="section">
-  <div class="section-title">Query & Response Breakdown</div>
-  <div class="chart-row">
-    {% if charts.types %}
-    <div class="chart-half">
-      <img class="chart-img" src="data:image/png;base64,{{ charts.types }}" alt="Query Types">
-    </div>
-    {% endif %}
-    {% if charts.codes %}
-    <div class="chart-half">
-      <img class="chart-img" src="data:image/png;base64,{{ charts.codes }}" alt="Response Codes">
-    </div>
-    {% endif %}
-  </div>
-</div>
-{% endif %}
-
-{# ══════════════════════════════════════════ RESPONSE CODE TABLE ══════ #}
-{% set by_code = analytics.get('byResponseCode', []) %}
-{% if by_code %}
-<div class="section">
-  <div class="section-title">Response Code Detail</div>
+  <div class="section-title">Security Events</div>
+  {% set action_labels = {
+    'block':              ('Blocked',                  'pill-red',   'Traffic stopped before reaching your website — triggered by firewall or WAF rules.'),
+    'managed_challenge':  ('Challenged (Turnstile)',   'pill-amber', 'Visitors presented an invisible or interactive challenge to prove they are human.'),
+    'challenge':          ('Challenged (CAPTCHA)',     'pill-amber', 'Legacy CAPTCHA challenge presented to the visitor.'),
+    'jschallenge':        ('JS Challenge',             'pill-amber', 'Browser integrity check used to filter automated bots.'),
+    'log':                ('Logged / Monitored',       'pill-blue',  'Request matched a rule in monitor-only mode — no action taken, recorded for review.'),
+    'allow':              ('Explicitly Allowed',       'pill-green', 'Request matched an allow rule and bypassed further security checks.'),
+    'bypass':             ('Rule Bypass',              'pill-gray',  'Request bypassed one or more security features due to a bypass rule.'),
+  } %}
   <div class="tbl-wrap">
     <table>
       <thead>
         <tr>
-          <th>Response Code</th>
-          <th class="text-right">Query Count</th>
-          <th class="text-right">Share of Traffic</th>
-          <th>Status</th>
+          <th style="width:22%;">Action Taken</th>
+          <th class="text-right" style="width:14%;">Events</th>
+          <th>What This Means</th>
         </tr>
       </thead>
       <tbody>
-        {% set total = metrics.total_queries %}
-        {% for row in by_code %}
-        {% set code = row.dimensions.responseCode %}
-        {% set count = row.count %}
-        {% set pct_val = (count / total * 100) if total > 0 else 0 %}
+        {% for row in sec_events %}
+        {% set action = row.dimensions.action %}
+        {% set info = action_labels.get(action, (action | title, 'pill-gray', '')) %}
         <tr>
-          <td class="mono">{{ code }}</td>
-          <td class="text-right">{{ count | human }}</td>
-          <td class="text-right">{{ "%.2f" | format(pct_val) }}%</td>
-          <td>
-            {% if code == 'NOERROR' %}
-              <span class="pill pill-green">OK</span>
-            {% elif code == 'NXDOMAIN' %}
-              <span class="pill pill-amber">Not Found</span>
-            {% elif code == 'SERVFAIL' %}
-              <span class="pill pill-red">Server Failure</span>
-            {% elif code == 'REFUSED' %}
-              <span class="pill pill-red">Refused</span>
-            {% else %}
-              <span class="pill pill-gray">{{ code }}</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-{% endif %}
-
-{# ══════════════════════════════════════════ QUERY TYPE TABLE ═════════ #}
-{% set by_type = analytics.get('byQueryType', []) %}
-{% if by_type %}
-<div class="section">
-  <div class="section-title">Record Type Distribution</div>
-  <div class="tbl-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Record Type</th>
-          <th class="text-right">Query Count</th>
-          <th class="text-right">Share</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% set total = metrics.total_queries %}
-        {% set type_desc = {
-          'A':     'IPv4 address mapping',
-          'AAAA':  'IPv6 address mapping',
-          'CNAME': 'Canonical name alias',
-          'MX':    'Mail exchanger',
-          'TXT':   'Text records (SPF, DKIM, etc.)',
-          'NS':    'Nameserver delegation',
-          'SOA':   'Start of authority',
-          'PTR':   'Reverse DNS pointer',
-          'SRV':   'Service locator',
-          'CAA':   'Certification authority authorization',
-          'DS':    'DNSSEC delegation signer',
-        } %}
-        {% for row in by_type %}
-        {% set rtype = row.dimensions.queryType %}
-        {% set count = row.count %}
-        {% set pct_val = (count / total * 100) if total > 0 else 0 %}
-        <tr>
-          <td><strong class="mono">{{ rtype }}</strong></td>
-          <td class="text-right">{{ count | human }}</td>
-          <td class="text-right">{{ "%.1f" | format(pct_val) }}%</td>
-          <td style="color:#666; font-size:8pt;">{{ type_desc.get(rtype, '') }}</td>
+          <td><span class="pill {{ info[1] }}">{{ info[0] }}</span></td>
+          <td class="text-right"><strong>{{ row.count | human }}</strong></td>
+          <td style="color:#555; font-size:8pt;">{{ info[2] }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -470,7 +435,7 @@ tbody td.mono {
 
 {# ═══════════════════════════════════════════════════ DNSSEC STATUS ═══ #}
 <div class="section">
-  <div class="section-title">DNSSEC Status</div>
+  <div class="section-title">DNS Security (DNSSEC)</div>
   {% set ds = dnssec %}
   {% set dnssec_status = ds.status | lower if ds.status else 'unknown' %}
   <div class="dnssec-block">
@@ -478,77 +443,40 @@ tbody td.mono {
     <div class="dnssec-body">
       <h3>
         {% if dnssec_status == 'active' %}
-          DNSSEC is Active
+          DNS Tampering Protection: Active
         {% elif dnssec_status in ['disabled', 'inactive'] %}
-          DNSSEC is Disabled
+          DNS Tampering Protection: Not Enabled
         {% else %}
-          DNSSEC Status: {{ ds.status | default('Unknown') }}
+          DNS Tampering Protection: {{ ds.status | default('Unknown') }}
         {% endif %}
       </h3>
-      {% if ds.ds_record %}
-      <p class="mono">DS Record: {{ ds.ds_record }}</p>
-      {% endif %}
       {% if ds.status == 'active' %}
-      <p>Zone is cryptographically signed. Resolvers that support DNSSEC will validate responses.</p>
+      <p>DNSSEC is active. DNS responses for this domain are cryptographically signed, preventing attackers from redirecting visitors to malicious sites through DNS hijacking or cache poisoning.</p>
       {% elif dnssec_status in ['disabled', 'inactive'] %}
-      <p>DNSSEC is not enabled. Consider enabling it in the Cloudflare dashboard for additional security.</p>
+      <p>DNSSEC is not currently enabled. Enabling it protects visitors from being redirected to fake or malicious versions of your website without their knowledge. This is a recommended security measure.</p>
       {% endif %}
       {% if ds.modified_on %}
-      <p>Last modified: {{ ds.modified_on[:10] }}</p>
+      <p style="color:#888; font-size:8pt;">Last updated: {{ ds.modified_on[:10] }}</p>
       {% endif %}
     </div>
   </div>
 </div>
 
-{# ════════════════════════════════════════════════════ DNS RECORDS ════ #}
-{% if include_records and dns_records %}
-<div class="section page-break">
-  <div class="section-title">DNS Records Inventory ({{ dns_records | length }} records)</div>
-
-  {# ── Record type summary chips ── #}
-  <div class="type-grid" style="margin-bottom:12px;">
+{# ═══════════════════════════════════════════════ DNS CONFIGURATION ════ #}
+{% if dns_records %}
+<div class="section">
+  <div class="section-title">DNS Configuration Summary</div>
+  <p style="color:#555; font-size:9pt; margin-bottom:10px;">
+    {{ dns_records | length }} DNS record{{ 's' if dns_records | length != 1 }} configured for this domain.
+    {% set proxied_count = dns_records | selectattr('proxied', 'equalto', true) | list | length %}
+    {% if proxied_count > 0 %}
+    {{ proxied_count }} record{{ 's' if proxied_count != 1 }} are routed through Cloudflare's network for added performance and protection.
+    {% endif %}
+  </p>
+  <div class="type-grid">
     {% for rtype, count in metrics.record_type_counts.items() %}
     <div class="type-chip"><span>{{ rtype }}</span> × {{ count }}</div>
     {% endfor %}
-  </div>
-
-  <div class="tbl-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th style="width:10%;">Type</th>
-          <th style="width:28%;">Name</th>
-          <th>Content</th>
-          <th style="width:8%;" class="text-right">TTL</th>
-          <th style="width:10%;" class="text-center">Proxied</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in dns_records %}
-        <tr>
-          <td><span class="pill pill-blue">{{ r.type }}</span></td>
-          <td class="mono">{{ r.name }}</td>
-          <td class="mono">
-            {% if r.content | length > 60 %}
-              {{ r.content[:60] }}…
-            {% else %}
-              {{ r.content }}
-            {% endif %}
-          </td>
-          <td class="text-right" style="color:#666;">
-            {% if r.ttl == 1 %}Auto{% else %}{{ r.ttl }}{% endif %}
-          </td>
-          <td class="text-center">
-            {% if r.proxiable and r.proxied %}
-              <span class="proxied-yes">&#x2713; Yes</span>
-            {% else %}
-              <span class="proxied-no">DNS only</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
   </div>
 </div>
 {% endif %}

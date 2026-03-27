@@ -71,6 +71,53 @@ query DnsReport($zoneTag: String!, $startDate: Date!, $endDate: Date!) {
         dimensions { responseCached }
         count
       }
+      byColo: dnsAnalyticsAdaptiveGroups(
+        limit: 10
+        filter: { date_geq: $startDate, date_leq: $endDate }
+        orderBy: [count_DESC]
+      ) {
+        dimensions { coloName }
+        count
+      }
+    }
+  }
+}
+"""
+
+# Separate query for HTTP traffic and security events.
+# Uses datetime (ISO 8601) for firewallEventsAdaptiveGroups and date for HTTP.
+# Wrapped in a try/except at call time — only available for proxied (orange-cloud) zones.
+HTTP_SECURITY_QUERY = """
+query HttpAndSecurity(
+  $zoneTag: String!,
+  $startDate: Date!, $endDate: Date!,
+  $startDatetime: Time!, $endDatetime: Time!
+) {
+  viewer {
+    zones(filter: { zoneTag: $zoneTag }) {
+      byCountry: httpRequestsAdaptiveGroups(
+        limit: 10
+        filter: { date_geq: $startDate, date_leq: $endDate }
+        orderBy: [count_DESC]
+      ) {
+        count
+        dimensions { clientCountryName }
+      }
+      httpTotals: httpRequestsAdaptiveGroups(
+        limit: 1
+        filter: { date_geq: $startDate, date_leq: $endDate }
+      ) {
+        sum { visits edgeResponseBytes }
+        uniq { uniques }
+      }
+      securityByAction: firewallEventsAdaptiveGroups(
+        limit: 10
+        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
+        orderBy: [count_DESC]
+      ) {
+        count
+        dimensions { action }
+      }
     }
   }
 }
@@ -88,6 +135,7 @@ def _merge_analytics(chunks: list) -> dict:
     by_code   = {}
     by_name   = {}
     by_cache  = {}
+    by_colo   = {}
 
     for chunk in chunks:
         by_date.extend(chunk.get("byDate", []))
@@ -108,6 +156,10 @@ def _merge_analytics(chunks: list) -> dict:
             k = row["dimensions"]["responseCached"]
             by_cache[k] = by_cache.get(k, 0) + row["count"]
 
+        for row in chunk.get("byColo", []):
+            k = row["dimensions"]["coloName"]
+            by_colo[k] = by_colo.get(k, 0) + row["count"]
+
     def _to_rows(agg: dict, dim_key: str, limit: int) -> list:
         return [
             {"dimensions": {dim_key: k}, "count": v}
@@ -120,6 +172,7 @@ def _merge_analytics(chunks: list) -> dict:
         "byResponseCode": _to_rows(by_code,  "responseCode",  20),
         "byQueryName":    _to_rows(by_name,  "queryName",     15),
         "byCacheStatus":  _to_rows(by_cache, "responseCached", 5),
+        "byColo":         _to_rows(by_colo,  "coloName",      10),
     }
 
 
@@ -234,9 +287,47 @@ class CloudflareClient:
         zones = result.get("data", {}).get("viewer", {}).get("zones", [])
         if not zones:
             logger.warning("No DNS analytics data for zone %s (%s – %s)", zone_id, start_date, end_date)
-            return {"byDate": [], "byQueryType": [], "byResponseCode": [], "byQueryName": [], "byCacheStatus": []}
+            return {"byDate": [], "byQueryType": [], "byResponseCode": [], "byQueryName": [], "byCacheStatus": [], "byColo": []}
 
         return zones[0]
+
+    def get_http_security_data(self, zone_id: str, start_date: str, end_date: str) -> dict:
+        """
+        Fetch HTTP traffic overview and security event counts via GraphQL.
+
+        This data is only available for zones with Cloudflare proxy enabled
+        (orange-cloud records). Returns an empty dict on any error so callers
+        can treat it as optional.
+
+        Returns:
+            Dict with keys: byCountry, httpTotals, securityByAction
+        """
+        start_dt = f"{start_date}T00:00:00Z"
+        end_dt   = f"{end_date}T23:59:59Z"
+        payload = {
+            "query": HTTP_SECURITY_QUERY,
+            "variables": {
+                "zoneTag":        zone_id,
+                "startDate":      start_date,
+                "endDate":        end_date,
+                "startDatetime":  start_dt,
+                "endDatetime":    end_dt,
+            },
+        }
+        try:
+            resp = self.session.post(GRAPHQL_ENDPOINT, json=payload, timeout=self.timeout)
+            resp.raise_for_status()
+            result = resp.json()
+            if result.get("errors"):
+                logger.warning("HTTP/security GraphQL errors for zone %s: %s", zone_id, result["errors"])
+                return {}
+            zones = result.get("data", {}).get("viewer", {}).get("zones", [])
+            if not zones:
+                return {}
+            return zones[0]
+        except Exception as exc:
+            logger.warning("HTTP/security data unavailable for zone %s (proxy may be off): %s", zone_id, exc)
+            return {}
 
     # ── Convenience ────────────────────────────────────────────────────────────
 
@@ -275,16 +366,18 @@ class CloudflareClient:
         start_str, end_str = start.isoformat(), end.isoformat()
         logger.info("Collecting report data for zone %s (%s → %s)", zone_id, start_str, end_str)
 
-        zone_info = self.get_zone_info(zone_id)
-        dns_records = self.get_dns_records(zone_id)
-        dnssec = self.get_dnssec_status(zone_id)
-        analytics = self.get_dns_analytics(zone_id, start_str, end_str)
+        zone_info    = self.get_zone_info(zone_id)
+        dns_records  = self.get_dns_records(zone_id)
+        dnssec       = self.get_dnssec_status(zone_id)
+        analytics    = self.get_dns_analytics(zone_id, start_str, end_str)
+        http_security = self.get_http_security_data(zone_id, start_str, end_str)
 
         return {
-            "zone_info": zone_info,
-            "dns_records": dns_records,
-            "dnssec": dnssec,
-            "analytics": analytics,
+            "zone_info":     zone_info,
+            "dns_records":   dns_records,
+            "dnssec":        dnssec,
+            "analytics":     analytics,
+            "http_security": http_security,
             "period": {
                 "start": start_str,
                 "end": end_str,

@@ -8,7 +8,7 @@
 const GRAPHQL_ENDPOINT = 'https://api.cloudflare.com/client/v4/graphql';
 const REST_BASE = 'https://api.cloudflare.com/client/v4';
 
-/** Five grouped analytics queries in one GraphQL round-trip using aliases. */
+/** Six grouped analytics queries in one GraphQL round-trip using aliases. */
 const DNS_ANALYTICS_QUERY = `
 query DnsReport($zoneTag: String!, $startDate: Date!, $endDate: Date!) {
   viewer {
@@ -52,6 +52,55 @@ query DnsReport($zoneTag: String!, $startDate: Date!, $endDate: Date!) {
       ) {
         dimensions { responseCached }
         count
+      }
+      byColo: dnsAnalyticsAdaptiveGroups(
+        limit: 10
+        filter: { date_geq: $startDate, date_leq: $endDate }
+        orderBy: [count_DESC]
+      ) {
+        dimensions { coloName }
+        count
+      }
+    }
+  }
+}
+`;
+
+/**
+ * HTTP traffic overview and security events.
+ * Only available for zones with Cloudflare proxy (orange-cloud records).
+ * firewallEventsAdaptiveGroups uses datetime (ISO 8601) filters.
+ */
+const HTTP_SECURITY_QUERY = `
+query HttpAndSecurity(
+  $zoneTag: String!,
+  $startDate: Date!, $endDate: Date!,
+  $startDatetime: Time!, $endDatetime: Time!
+) {
+  viewer {
+    zones(filter: { zoneTag: $zoneTag }) {
+      byCountry: httpRequestsAdaptiveGroups(
+        limit: 10
+        filter: { date_geq: $startDate, date_leq: $endDate }
+        orderBy: [count_DESC]
+      ) {
+        count
+        dimensions { clientCountryName }
+      }
+      httpTotals: httpRequestsAdaptiveGroups(
+        limit: 1
+        filter: { date_geq: $startDate, date_leq: $endDate }
+      ) {
+        sum { visits edgeResponseBytes }
+        uniq { uniques }
+      }
+      securityByAction: firewallEventsAdaptiveGroups(
+        limit: 10
+        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
+        orderBy: [count_DESC]
+      ) {
+        count
+        dimensions { action }
       }
     }
   }
@@ -112,7 +161,7 @@ export class CloudflareClient {
    * DNS analytics from GraphQL.
    * Cloudflare caps zone-level queries at 7 days — wider ranges are
    * automatically chunked and merged.
-   * @returns {{ byDate, byQueryType, byResponseCode, byQueryName, byCacheStatus }}
+   * @returns {{ byDate, byQueryType, byResponseCode, byQueryName, byCacheStatus, byColo }}
    */
   async getDnsAnalytics(zoneId, startDate, endDate) {
     const start    = new Date(startDate + 'T00:00:00Z');
@@ -153,9 +202,40 @@ export class CloudflareClient {
 
     const zones = result?.data?.viewer?.zones ?? [];
     if (!zones.length) {
-      return { byDate: [], byQueryType: [], byResponseCode: [], byQueryName: [], byCacheStatus: [] };
+      return { byDate: [], byQueryType: [], byResponseCode: [], byQueryName: [], byCacheStatus: [], byColo: [] };
     }
     return zones[0];
+  }
+
+  /**
+   * HTTP traffic overview and security event counts.
+   * Returns empty object for DNS-only (gray-cloud) zones — callers treat as optional.
+   * @returns {{ byCountry, httpTotals, securityByAction }}
+   */
+  async getHttpSecurityData(zoneId, startDate, endDate) {
+    try {
+      const resp = await fetch(GRAPHQL_ENDPOINT, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({
+          query: HTTP_SECURITY_QUERY,
+          variables: {
+            zoneTag:       zoneId,
+            startDate,
+            endDate,
+            startDatetime: `${startDate}T00:00:00Z`,
+            endDatetime:   `${endDate}T23:59:59Z`,
+          },
+        }),
+      });
+      if (!resp.ok) return {};
+      const result = await resp.json();
+      if (result.errors?.length) return {};
+      const zones = result?.data?.viewer?.zones ?? [];
+      return zones[0] ?? {};
+    } catch (_) {
+      return {};
+    }
   }
 
   /**
@@ -167,14 +247,22 @@ export class CloudflareClient {
   async collectReportData(zoneId, frequency, lookbackOverrideDays = null) {
     const { start, end } = computeDateRange(frequency, lookbackOverrideDays);
 
-    const [zoneInfo, dnsRecords, dnssec, analytics] = await Promise.all([
+    const [zoneInfo, dnsRecords, dnssec, analytics, httpSecurity] = await Promise.all([
       this.getZoneInfo(zoneId),
       this.getDnsRecords(zoneId),
       this.getDnssecStatus(zoneId),
       this.getDnsAnalytics(zoneId, start, end),
+      this.getHttpSecurityData(zoneId, start, end),
     ]);
 
-    return { zoneInfo, dnsRecords, dnssec, analytics, period: { start, end, frequency } };
+    return {
+      zoneInfo,
+      dnsRecords,
+      dnssec,
+      analytics,
+      http_security: httpSecurity,
+      period: { start, end, frequency },
+    };
   }
 }
 
@@ -221,14 +309,16 @@ function mergeAnalytics(chunks) {
   const byCode  = {};
   const byName  = {};
   const byCache = {};
+  const byColo  = {};
 
   for (const chunk of chunks) {
     byDate.push(...(chunk.byDate ?? []));
 
-    for (const row of chunk.byQueryType    ?? []) byType [row.dimensions.queryType]     = (byType [row.dimensions.queryType]     ?? 0) + row.count;
-    for (const row of chunk.byResponseCode ?? []) byCode [row.dimensions.responseCode]  = (byCode [row.dimensions.responseCode]  ?? 0) + row.count;
-    for (const row of chunk.byQueryName    ?? []) byName [row.dimensions.queryName]     = (byName [row.dimensions.queryName]     ?? 0) + row.count;
+    for (const row of chunk.byQueryType    ?? []) byType [row.dimensions.queryType]      = (byType [row.dimensions.queryType]      ?? 0) + row.count;
+    for (const row of chunk.byResponseCode ?? []) byCode [row.dimensions.responseCode]   = (byCode [row.dimensions.responseCode]   ?? 0) + row.count;
+    for (const row of chunk.byQueryName    ?? []) byName [row.dimensions.queryName]      = (byName [row.dimensions.queryName]      ?? 0) + row.count;
     for (const row of chunk.byCacheStatus  ?? []) byCache[row.dimensions.responseCached] = (byCache[row.dimensions.responseCached] ?? 0) + row.count;
+    for (const row of chunk.byColo         ?? []) byColo [row.dimensions.coloName]       = (byColo [row.dimensions.coloName]       ?? 0) + row.count;
   }
 
   const toRows = (agg, dimKey, limit) =>
@@ -243,5 +333,6 @@ function mergeAnalytics(chunks) {
     byResponseCode: toRows(byCode,  'responseCode',   20),
     byQueryName:    toRows(byName,  'queryName',      15),
     byCacheStatus:  toRows(byCache, 'responseCached',  5),
+    byColo:         toRows(byColo,  'coloName',       10),
   };
 }
