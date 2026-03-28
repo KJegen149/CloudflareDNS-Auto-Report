@@ -18,7 +18,7 @@ crons = [
 [[d1_databases]]
 binding       = "DB"
 database_name = "dns-reports"
-database_id   = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id   = "31be2310-8420-4651-b079-e078909fece2"
 
 # ── Secrets (set via: wrangler secret put <NAME>) ─────────────────────────────
 # RESEND_API_KEY        — Resend transactional email API key (resend.com)
