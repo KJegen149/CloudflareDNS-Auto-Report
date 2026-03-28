@@ -10,7 +10,10 @@ REST base:        https://api.cloudflare.com/client/v4
 Useful resources:
   - GraphQL schema explorer: https://graphql.cloudflare.com/explorer
   - DNS analytics docs:      https://developers.cloudflare.com/dns/additional-options/analytics/
+  - Gateway analytics docs:  https://developers.cloudflare.com/cloudflare-one/insights/analytics/gateway/
+  - AI Crawl Control:        https://developers.cloudflare.com/ai-crawl-control/reference/graphql-api/
   - API token scopes needed: Zone.DNS:Read, Zone.Zone:Read, Zone.Analytics:Read
+                             Account.Account Analytics:Read (for Gateway/ZTNA data)
 """
 import logging
 from datetime import date, timedelta
@@ -122,6 +125,102 @@ query HttpAndSecurity(
   }
 }
 """
+
+# ── Gateway / ZTNA query ───────────────────────────────────────────────────────
+# Account-scoped. Requires "Account Analytics: Read" API token permission.
+# Uses datetime (ISO 8601 Time) filters — Gateway datasets do not accept Date filters.
+# Returns empty dict gracefully if Gateway/ZTNA is not configured on the account.
+GATEWAY_QUERY = """
+query GatewayInsights($accountTag: String!, $startDatetime: Time!, $endDatetime: Time!) {
+  viewer {
+    accounts(filter: { accountTag: $accountTag }) {
+      gwDnsByDecision: gatewayResolverQueriesAdaptiveGroups(
+        limit: 10
+        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
+        orderBy: [count_DESC]
+      ) {
+        count
+        dimensions { resolverDecision }
+      }
+      gwDnsTopDomains: gatewayResolverQueriesAdaptiveGroups(
+        limit: 15
+        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
+        orderBy: [count_DESC]
+      ) {
+        count
+        dimensions { queryNameReversed }
+      }
+      gwHttpByAction: gatewayL7RequestsAdaptiveGroups(
+        limit: 10
+        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
+        orderBy: [count_DESC]
+      ) {
+        count
+        dimensions { action }
+      }
+      gwHttpByCategory: gatewayL7RequestsAdaptiveGroups(
+        limit: 10
+        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
+        orderBy: [count_DESC]
+      ) {
+        count
+        dimensions { categoryName }
+      }
+      gwHttpByApp: gatewayL7RequestsAdaptiveGroups(
+        limit: 10
+        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
+        orderBy: [count_DESC]
+      ) {
+        count
+        dimensions { applicationName }
+      }
+      gwTopBandwidth: gatewayL4SessionsAdaptiveGroups(
+        limit: 10
+        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
+        orderBy: [sum_bytesIngress_DESC]
+      ) {
+        sum { bytesIngress bytesEgress }
+        dimensions { email }
+      }
+    }
+  }
+}
+"""
+
+# ── AI crawler detection ───────────────────────────────────────────────────────
+# Zone-scoped, available on ALL plans via userAgent_like filter.
+# Each entry: (graphql_alias, display_name, user_agent_substring)
+_AI_BOTS = [
+    ("gptBot",         "GPTBot (OpenAI)",           "GPTBot"),
+    ("chatGptUser",    "ChatGPT-User (OpenAI)",      "ChatGPT-User"),
+    ("googleExtended", "Google-Extended",            "Google-Extended"),
+    ("claudeBot",      "ClaudeBot (Anthropic)",      "anthropic-ai"),
+    ("perplexityBot",  "PerplexityBot",              "PerplexityBot"),
+    ("metaBot",        "Meta AI Crawler",            "meta-externalagent"),
+    ("byteSpider",     "ByteSpider (TikTok/ByteDance)", "Bytespider"),
+    ("appleBotExt",    "Applebot-Extended (Apple)", "Applebot-Extended"),
+]
+
+def _build_ai_crawlers_query() -> str:
+    aliases = "\n".join(
+        f'      {alias}: httpRequestsAdaptiveGroups(\n'
+        f'        limit: 1\n'
+        f'        filter: {{ datetime_geq: $startDatetime, datetime_leq: $endDatetime,'
+        f' requestSource: "eyeball", userAgent_like: "%{ua}%" }}\n'
+        f'      ) {{ count sum {{ edgeResponseBytes }} }}'
+        for alias, _, ua in _AI_BOTS
+    )
+    return (
+        "query AiCrawlers($zoneTag: String!, $startDatetime: Time!, $endDatetime: Time!) {\n"
+        "  viewer {\n"
+        "    zones(filter: { zoneTag: $zoneTag }) {\n"
+        + aliases + "\n"
+        "    }\n"
+        "  }\n"
+        "}\n"
+    )
+
+AI_CRAWLERS_QUERY = _build_ai_crawlers_query()
 
 
 class CloudflareAPIError(Exception):
@@ -291,6 +390,87 @@ class CloudflareClient:
 
         return zones[0]
 
+    def get_gateway_data(self, account_id: str, start_date: str, end_date: str) -> dict:
+        """
+        Fetch Cloudflare Gateway (ZTNA) analytics for the account.
+
+        Requires 'Account Analytics: Read' API token permission.
+        Returns empty dict if Gateway is not configured or permission is missing.
+
+        Returns:
+            Dict with keys: gwDnsByDecision, gwDnsTopDomains, gwHttpByAction,
+                            gwHttpByCategory, gwHttpByApp, gwTopBandwidth
+        """
+        if not account_id:
+            return {}
+        start_dt = f"{start_date}T00:00:00Z"
+        end_dt   = f"{end_date}T23:59:59Z"
+        payload = {
+            "query": GATEWAY_QUERY,
+            "variables": {
+                "accountTag":    account_id,
+                "startDatetime": start_dt,
+                "endDatetime":   end_dt,
+            },
+        }
+        try:
+            resp = self.session.post(GRAPHQL_ENDPOINT, json=payload, timeout=self.timeout)
+            resp.raise_for_status()
+            result = resp.json()
+            if result.get("errors"):
+                logger.info(
+                    "Gateway data unavailable for account %s (Zero Trust may not be active): %s",
+                    account_id, result["errors"],
+                )
+                return {}
+            accounts = result.get("data", {}).get("viewer", {}).get("accounts", [])
+            return accounts[0] if accounts else {}
+        except Exception as exc:
+            logger.info("Gateway query failed for account %s: %s", account_id, exc)
+            return {}
+
+    def get_ai_traffic_data(self, zone_id: str, start_date: str, end_date: str) -> list:
+        """
+        Detect known AI crawlers hitting the zone via user-agent matching.
+
+        Works on all Cloudflare plans — no Bot Management required.
+        Returns a list of {name, count, bytes} dicts sorted by count descending.
+        Returns empty list on any error.
+        """
+        start_dt = f"{start_date}T00:00:00Z"
+        end_dt   = f"{end_date}T23:59:59Z"
+        payload = {
+            "query": AI_CRAWLERS_QUERY,
+            "variables": {
+                "zoneTag":       zone_id,
+                "startDatetime": start_dt,
+                "endDatetime":   end_dt,
+            },
+        }
+        try:
+            resp = self.session.post(GRAPHQL_ENDPOINT, json=payload, timeout=self.timeout)
+            resp.raise_for_status()
+            result = resp.json()
+            if result.get("errors"):
+                logger.info("AI crawler query errors for zone %s: %s", zone_id, result["errors"])
+                return []
+            zones = result.get("data", {}).get("viewer", {}).get("zones", [])
+            if not zones:
+                return []
+            data = zones[0]
+            rows = []
+            for alias, display_name, _ in _AI_BOTS:
+                bot_rows = data.get(alias, [])
+                if bot_rows:
+                    count = bot_rows[0].get("count", 0)
+                    bytes_served = bot_rows[0].get("sum", {}).get("edgeResponseBytes", 0)
+                    if count > 0:
+                        rows.append({"name": display_name, "count": count, "bytes": bytes_served})
+            return sorted(rows, key=lambda x: -x["count"])
+        except Exception as exc:
+            logger.info("AI traffic query failed for zone %s: %s", zone_id, exc)
+            return []
+
     def get_http_security_data(self, zone_id: str, start_date: str, end_date: str) -> dict:
         """
         Fetch HTTP traffic overview and security event counts via GraphQL.
@@ -367,17 +547,23 @@ class CloudflareClient:
         logger.info("Collecting report data for zone %s (%s → %s)", zone_id, start_str, end_str)
 
         zone_info    = self.get_zone_info(zone_id)
+        account_id   = zone_info.get("account", {}).get("id", "")
         dns_records  = self.get_dns_records(zone_id)
         dnssec       = self.get_dnssec_status(zone_id)
         analytics    = self.get_dns_analytics(zone_id, start_str, end_str)
         http_security = self.get_http_security_data(zone_id, start_str, end_str)
+        ai_traffic   = self.get_ai_traffic_data(zone_id, start_str, end_str)
+        gateway      = self.get_gateway_data(account_id, start_str, end_str)
 
         return {
             "zone_info":     zone_info,
+            "account_id":    account_id,
             "dns_records":   dns_records,
             "dnssec":        dnssec,
             "analytics":     analytics,
             "http_security": http_security,
+            "ai_traffic":    ai_traffic,
+            "gateway":       gateway,
             "period": {
                 "start": start_str,
                 "end": end_str,

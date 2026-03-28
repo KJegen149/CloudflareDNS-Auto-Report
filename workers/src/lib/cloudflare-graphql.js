@@ -107,6 +107,100 @@ query HttpAndSecurity(
 }
 `;
 
+/**
+ * Cloudflare Gateway / ZTNA analytics.
+ * Account-scoped — requires Account Analytics: Read permission.
+ * Returns empty object if Gateway is not configured or permission is missing.
+ */
+const GATEWAY_QUERY = `
+query GatewayInsights($accountTag: String!, $startDatetime: Time!, $endDatetime: Time!) {
+  viewer {
+    accounts(filter: { accountTag: $accountTag }) {
+      gwDnsByDecision: gatewayResolverQueriesAdaptiveGroups(
+        limit: 10
+        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
+        orderBy: [count_DESC]
+      ) {
+        count
+        dimensions { resolverDecision }
+      }
+      gwDnsTopDomains: gatewayResolverQueriesAdaptiveGroups(
+        limit: 15
+        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
+        orderBy: [count_DESC]
+      ) {
+        count
+        dimensions { queryNameReversed }
+      }
+      gwHttpByAction: gatewayL7RequestsAdaptiveGroups(
+        limit: 10
+        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
+        orderBy: [count_DESC]
+      ) {
+        count
+        dimensions { action }
+      }
+      gwHttpByCategory: gatewayL7RequestsAdaptiveGroups(
+        limit: 10
+        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
+        orderBy: [count_DESC]
+      ) {
+        count
+        dimensions { categoryName }
+      }
+      gwHttpByApp: gatewayL7RequestsAdaptiveGroups(
+        limit: 10
+        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
+        orderBy: [count_DESC]
+      ) {
+        count
+        dimensions { applicationName }
+      }
+      gwTopBandwidth: gatewayL4SessionsAdaptiveGroups(
+        limit: 10
+        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
+        orderBy: [sum_bytesIngress_DESC]
+      ) {
+        sum { bytesIngress bytesEgress }
+        dimensions { email }
+      }
+    }
+  }
+}
+`;
+
+/** Known AI crawlers detected by user-agent substring. Available on all plans. */
+const AI_BOTS = [
+  { alias: 'gptBot',         name: 'GPTBot (OpenAI)',               ua: 'GPTBot' },
+  { alias: 'chatGptUser',    name: 'ChatGPT-User (OpenAI)',         ua: 'ChatGPT-User' },
+  { alias: 'googleExtended', name: 'Google-Extended',               ua: 'Google-Extended' },
+  { alias: 'claudeBot',      name: 'ClaudeBot (Anthropic)',         ua: 'anthropic-ai' },
+  { alias: 'perplexityBot',  name: 'PerplexityBot',                 ua: 'PerplexityBot' },
+  { alias: 'metaBot',        name: 'Meta AI Crawler',               ua: 'meta-externalagent' },
+  { alias: 'byteSpider',     name: 'ByteSpider (TikTok/ByteDance)', ua: 'Bytespider' },
+  { alias: 'appleBotExt',    name: 'Applebot-Extended (Apple)',     ua: 'Applebot-Extended' },
+];
+
+function buildAiCrawlersQuery() {
+  const aliases = AI_BOTS.map(({ alias, ua }) =>
+    `      ${alias}: httpRequestsAdaptiveGroups(\n` +
+    `        limit: 1\n` +
+    `        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime,` +
+    ` requestSource: "eyeball", userAgent_like: "%${ua}%" }\n` +
+    `      ) { count sum { edgeResponseBytes } }`
+  ).join('\n');
+  return (
+    `query AiCrawlers($zoneTag: String!, $startDatetime: Time!, $endDatetime: Time!) {\n` +
+    `  viewer {\n` +
+    `    zones(filter: { zoneTag: $zoneTag }) {\n` +
+    aliases + '\n' +
+    `    }\n  }\n}`
+  );
+}
+
+const AI_CRAWLERS_QUERY = buildAiCrawlersQuery();
+
+
 export class CloudflareClient {
   constructor(apiToken) {
     this.apiToken = apiToken;
@@ -239,6 +333,76 @@ export class CloudflareClient {
   }
 
   /**
+   * Cloudflare Gateway / ZTNA analytics (account-scoped).
+   * Returns empty object if Gateway is not configured or permission is missing.
+   * @returns {Promise<object>}
+   */
+  async getGatewayData(accountId, startDate, endDate) {
+    if (!accountId) return {};
+    try {
+      const resp = await fetch(GRAPHQL_ENDPOINT, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({
+          query: GATEWAY_QUERY,
+          variables: {
+            accountTag:    accountId,
+            startDatetime: `${startDate}T00:00:00Z`,
+            endDatetime:   `${endDate}T23:59:59Z`,
+          },
+        }),
+      });
+      if (!resp.ok) return {};
+      const result = await resp.json();
+      if (result.errors?.length) return {};
+      const accounts = result?.data?.viewer?.accounts ?? [];
+      return accounts[0] ?? {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /**
+   * AI / bot crawler traffic for the zone, one row per known crawler.
+   * Works on all Cloudflare plans (uses userAgent_like, not Bot Management).
+   * @returns {Promise<Array<{name: string, count: number, bytes: number}>>}
+   */
+  async getAiTrafficData(zoneId, startDate, endDate) {
+    try {
+      const resp = await fetch(GRAPHQL_ENDPOINT, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({
+          query: AI_CRAWLERS_QUERY,
+          variables: {
+            zoneTag:       zoneId,
+            startDatetime: `${startDate}T00:00:00Z`,
+            endDatetime:   `${endDate}T23:59:59Z`,
+          },
+        }),
+      });
+      if (!resp.ok) return [];
+      const result = await resp.json();
+      if (result.errors?.length) return [];
+      const zones = result?.data?.viewer?.zones ?? [];
+      if (!zones.length) return [];
+      const data = zones[0];
+      const rows = [];
+      for (const { alias, name } of AI_BOTS) {
+        const botRows = data[alias] ?? [];
+        if (botRows.length) {
+          const count = botRows[0].count ?? 0;
+          const bytes = botRows[0].sum?.edgeResponseBytes ?? 0;
+          if (count > 0) rows.push({ name, count, bytes });
+        }
+      }
+      return rows.sort((a, b) => b.count - a.count);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /**
    * Collect all data needed to render a report for one zone.
    * @param {string} zoneId
    * @param {'daily'|'weekly'|'monthly'} frequency
@@ -255,12 +419,21 @@ export class CloudflareClient {
       this.getHttpSecurityData(zoneId, start, end),
     ]);
 
+    const accountId = zoneInfo?.account?.id ?? '';
+    const [gateway, aiTraffic] = await Promise.all([
+      this.getGatewayData(accountId, start, end),
+      this.getAiTrafficData(zoneId, start, end),
+    ]);
+
     return {
       zoneInfo,
+      accountId,
       dnsRecords,
       dnssec,
       analytics,
       http_security: httpSecurity,
+      gateway,
+      ai_traffic:    aiTraffic,
       period: { start, end, frequency },
     };
   }

@@ -258,6 +258,37 @@ tbody td.mono {
   color: #722F37;
 }
 
+/* ── Report section banners ──────────────────────────────────────────── */
+.report-section-banner {
+  margin: 28px 0 20px;
+  padding: 11px 20px;
+  border-radius: 4px;
+  font-size: 11pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #ffffff;
+  page-break-before: always;
+}
+.report-section-banner.dns   { background: #722F37; }
+.report-section-banner.ztna  { background: #1a3a5c; }
+.report-section-banner .banner-sub {
+  font-size: 8pt;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.8;
+  display: block;
+  margin-top: 2px;
+}
+
+/* ── Compact two-column grid (for Gateway top-lists) ─────────────────── */
+.two-col {
+  display: flex;
+  gap: 16px;
+}
+.two-col > .col { flex: 1; min-width: 0; }
+
 /* ── Footer ───────────────────────────────────────────────────────────── */
 .report-footer {
   margin-top: 28px;
@@ -297,6 +328,12 @@ tbody td.mono {
 </div>
 
 <div class="content">
+
+{# ══════════════════════════════════════ SECTION BANNER: DNS & WEB ═ #}
+<div class="report-section-banner dns">
+  Website &amp; DNS Analytics
+  <span class="banner-sub">Traffic, performance, and security for {{ zone_info.name | default(zone.zone_name) }}</span>
+</div>
 
 {# ═══════════════════════════════════════════════════ SUMMARY CARDS ═ #}
 {# Compute totals needed for cards #}
@@ -433,6 +470,47 @@ tbody td.mono {
 </div>
 {% endif %}
 
+{# ══════════════════════════════════════════════ AI CRAWLER ACTIVITY ════ #}
+{% if charts.ai_crawlers %}
+<div class="section">
+  <div class="section-title">AI Crawler Activity</div>
+  <p style="color:#555; font-size:9pt; margin-bottom:10px;">
+    Known AI companies and search engines crawling this website. These are detected by their
+    published user agent strings. Use Cloudflare AI Crawl Control to allow or block specific crawlers.
+  </p>
+  <div class="two-col">
+    <div class="col">
+      <img class="chart-img" src="data:image/png;base64,{{ charts.ai_crawlers }}" alt="AI Crawler Activity">
+    </div>
+    <div class="col">
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr><th>AI Crawler</th><th class="text-right">Requests</th><th class="text-right">Data Served</th></tr>
+          </thead>
+          <tbody>
+            {% set ai_total = namespace(count=0) %}
+            {% for bot in ai_traffic %}
+              {% set ai_total.count = ai_total.count + bot.count %}
+              <tr>
+                <td>{{ bot.name }}</td>
+                <td class="text-right"><strong>{{ bot.count | human }}</strong></td>
+                <td class="text-right">{{ bot.bytes | human_bytes }}</td>
+              </tr>
+            {% endfor %}
+            <tr style="font-weight:600; border-top:2px solid #e5d7d9;">
+              <td>Total AI Crawlers</td>
+              <td class="text-right">{{ ai_total.count | human }}</td>
+              <td class="text-right"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {# ═══════════════════════════════════════════════════ DNSSEC STATUS ═══ #}
 <div class="section">
   <div class="section-title">DNS Security (DNSSEC)</div>
@@ -481,11 +559,191 @@ tbody td.mono {
 </div>
 {% endif %}
 
+{# ═══════════════════ SECTION BANNER: CLOUDFLARE GATEWAY / ZTNA ═════ #}
+{% set has_gateway = gateway and (gateway.gwDnsByDecision or gateway.gwHttpByAction or gateway.gwTopBandwidth) %}
+{% if has_gateway %}
+
+<div class="report-section-banner ztna">
+  Cloudflare Gateway &amp; Zero Trust
+  <span class="banner-sub">Network security, DNS filtering, and identity-aware access for your organization</span>
+</div>
+
+{# ════════════════════════════════════ GATEWAY AT A GLANCE CARDS ════ #}
+<div class="section">
+  <div class="section-title">At a Glance</div>
+  <div class="cards">
+
+    {% if gw_dns_total > 0 %}
+    <div class="card">
+      <div class="card-value">{{ gw_dns_total | human }}</div>
+      <div class="card-label">DNS Queries</div>
+    </div>
+    <div class="card {{ 'red' if gw_dns_blocked > 0 else 'green' }}">
+      <div class="card-value">{{ gw_dns_blocked | human }}</div>
+      <div class="card-label">DNS Blocked</div>
+    </div>
+    {% endif %}
+
+    {% if gw_http_total > 0 %}
+    <div class="card blue">
+      <div class="card-value">{{ gw_http_total | human }}</div>
+      <div class="card-label">Proxy Requests</div>
+    </div>
+    {% if gw_http_blocked > 0 %}
+    <div class="card red">
+      <div class="card-value">{{ gw_http_blocked | human }}</div>
+      <div class="card-label">Proxy Blocked</div>
+    </div>
+    {% endif %}
+    {% if gw_http_isolated > 0 %}
+    <div class="card amber">
+      <div class="card-value">{{ gw_http_isolated | human }}</div>
+      <div class="card-label">Browser Isolated</div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if gw_bw_total > 0 %}
+    <div class="card">
+      <div class="card-value">{{ gw_bw_total | human_bytes }}</div>
+      <div class="card-label">Total Bandwidth</div>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+{# ═══════════════════════════════════════ GATEWAY DNS SECTION ════════ #}
+{% set gw_dns_decisions = gateway.get('gwDnsByDecision', []) %}
+{% set gw_dns_domains   = gateway.get('gwDnsTopDomains', []) %}
+{% if gw_dns_decisions or gw_dns_domains %}
+<div class="section">
+  <div class="section-title">Gateway DNS Filtering</div>
+  <div class="two-col">
+    {% if charts.gw_dns %}
+    <div class="col">
+      <img class="chart-img" src="data:image/png;base64,{{ charts.gw_dns }}" alt="Gateway DNS Decisions">
+    </div>
+    {% endif %}
+    {% if gw_dns_domains %}
+    <div class="col">
+      <p style="font-size:8pt; font-weight:600; color:#1a3a5c; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.4px;">Top Queried Domains</p>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr><th>Domain</th><th class="text-right">Queries</th></tr>
+          </thead>
+          <tbody>
+            {% for row in gw_dns_domains %}
+            <tr>
+              <td class="mono">{{ row.dimensions.queryNameReversed | reverse_domain }}</td>
+              <td class="text-right">{{ row.count | human }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ═════════════════════════════════ GATEWAY HTTP PROXY SECTION ═══════ #}
+{% set gw_categories = gateway.get('gwHttpByCategory', []) %}
+{% set gw_apps       = gateway.get('gwHttpByApp', []) %}
+{% if charts.gw_http or gw_categories or gw_apps %}
+<div class="section">
+  <div class="section-title">Proxy Traffic &amp; Content Categories</div>
+
+  {% if charts.gw_http %}
+  <div class="chart-full" style="margin-bottom:16px;">
+    <img class="chart-img" src="data:image/png;base64,{{ charts.gw_http }}" alt="Gateway HTTP Actions">
+  </div>
+  {% endif %}
+
+  {% if gw_categories or gw_apps %}
+  <div class="two-col">
+    {% if gw_categories %}
+    <div class="col">
+      <p style="font-size:8pt; font-weight:600; color:#1a3a5c; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.4px;">Top Content Categories</p>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Category</th><th class="text-right">Requests</th></tr></thead>
+          <tbody>
+            {% for row in gw_categories %}
+            <tr>
+              <td>{{ row.dimensions.categoryName or 'Uncategorized' }}</td>
+              <td class="text-right">{{ row.count | human }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+    {% if gw_apps %}
+    <div class="col">
+      <p style="font-size:8pt; font-weight:600; color:#1a3a5c; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.4px;">Top Applications</p>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Application</th><th class="text-right">Requests</th></tr></thead>
+          <tbody>
+            {% for row in gw_apps %}
+            <tr>
+              <td>{{ row.dimensions.applicationName or 'Unknown' }}</td>
+              <td class="text-right">{{ row.count | human }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ═════════════════════════════════════ TOP BANDWIDTH CONSUMERS ═══════ #}
+{% set gw_bw = gateway.get('gwTopBandwidth', []) %}
+{% if gw_bw %}
+<div class="section">
+  <div class="section-title">Top Bandwidth Consumers</div>
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>User</th>
+          <th class="text-right">Downloaded</th>
+          <th class="text-right">Uploaded</th>
+          <th class="text-right">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in gw_bw %}
+        {% set dl = row.sum.bytesEgress %}
+        {% set ul = row.sum.bytesIngress %}
+        <tr>
+          <td>{{ row.dimensions.email or 'Unauthenticated / Unknown' }}</td>
+          <td class="text-right">{{ dl | human_bytes }}</td>
+          <td class="text-right">{{ ul | human_bytes }}</td>
+          <td class="text-right"><strong>{{ (dl + ul) | human_bytes }}</strong></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endif %}{# end has_gateway #}
+
 {# ════════════════════════════════════════════════════════ FOOTER ════ #}
 <div class="report-footer">
   <span>
     {{ zone_info.name | default(zone.zone_name) }} &bull;
-    {{ frequency }} DNS Report &bull;
+    {{ frequency }} Report &bull;
     {{ period.start }} to {{ period.end }}
   </span>
   <span>CloudflareDNS-Auto-Report</span>
