@@ -355,11 +355,6 @@ tbody td.mono {
 
     {% if http_totals %}
     <div class="card blue">
-      <div class="card-value">{{ http_totals.uniq.uniques | human }}</div>
-      <div class="card-label">Unique Visitors</div>
-    </div>
-
-    <div class="card blue">
       <div class="card-value">{{ http_totals.sum.visits | human }}</div>
       <div class="card-label">Total Visits</div>
     </div>

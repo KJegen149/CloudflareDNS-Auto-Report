@@ -111,7 +111,6 @@ query HttpAndSecurity(
         filter: { date_geq: $startDate, date_leq: $endDate }
       ) {
         sum { visits edgeResponseBytes }
-        uniq { uniques }
       }
       securityByAction: firewallEventsAdaptiveGroups(
         limit: 10
@@ -158,14 +157,6 @@ query GatewayInsights($accountTag: String!, $startDatetime: Time!, $endDatetime:
         count
         dimensions { action }
       }
-      gwHttpByCategory: gatewayL7RequestsAdaptiveGroups(
-        limit: 10
-        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
-        orderBy: [count_DESC]
-      ) {
-        count
-        dimensions { categoryName }
-      }
       gwHttpByApp: gatewayL7RequestsAdaptiveGroups(
         limit: 10
         filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
@@ -205,13 +196,13 @@ def _build_ai_crawlers_query() -> str:
     aliases = "\n".join(
         f'      {alias}: httpRequestsAdaptiveGroups(\n'
         f'        limit: 1\n'
-        f'        filter: {{ datetime_geq: $startDatetime, datetime_leq: $endDatetime,'
-        f' requestSource: "eyeball", userAgent_like: "%{ua}%" }}\n'
+        f'        filter: {{ date_geq: $startDate, date_leq: $endDate,'
+        f' userAgent_like: "%{ua}%" }}\n'
         f'      ) {{ count sum {{ edgeResponseBytes }} }}'
         for alias, _, ua in _AI_BOTS
     )
     return (
-        "query AiCrawlers($zoneTag: String!, $startDatetime: Time!, $endDatetime: Time!) {\n"
+        "query AiCrawlers($zoneTag: String!, $startDate: Date!, $endDate: Date!) {\n"
         "  viewer {\n"
         "    zones(filter: { zoneTag: $zoneTag }) {\n"
         + aliases + "\n"
@@ -437,14 +428,12 @@ class CloudflareClient:
         Returns a list of {name, count, bytes} dicts sorted by count descending.
         Returns empty list on any error.
         """
-        start_dt = f"{start_date}T00:00:00Z"
-        end_dt   = f"{end_date}T23:59:59Z"
         payload = {
             "query": AI_CRAWLERS_QUERY,
             "variables": {
-                "zoneTag":       zone_id,
-                "startDatetime": start_dt,
-                "endDatetime":   end_dt,
+                "zoneTag":   zone_id,
+                "startDate": start_date,
+                "endDate":   end_date,
             },
         }
         try:

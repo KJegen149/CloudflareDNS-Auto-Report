@@ -92,7 +92,6 @@ query HttpAndSecurity(
         filter: { date_geq: $startDate, date_leq: $endDate }
       ) {
         sum { visits edgeResponseBytes }
-        uniq { uniques }
       }
       securityByAction: firewallEventsAdaptiveGroups(
         limit: 10
@@ -140,14 +139,6 @@ query GatewayInsights($accountTag: String!, $startDatetime: Time!, $endDatetime:
         count
         dimensions { action }
       }
-      gwHttpByCategory: gatewayL7RequestsAdaptiveGroups(
-        limit: 10
-        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
-        orderBy: [count_DESC]
-      ) {
-        count
-        dimensions { categoryName }
-      }
       gwHttpByApp: gatewayL7RequestsAdaptiveGroups(
         limit: 10
         filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
@@ -185,12 +176,12 @@ function buildAiCrawlersQuery() {
   const aliases = AI_BOTS.map(({ alias, ua }) =>
     `      ${alias}: httpRequestsAdaptiveGroups(\n` +
     `        limit: 1\n` +
-    `        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime,` +
-    ` requestSource: "eyeball", userAgent_like: "%${ua}%" }\n` +
+    `        filter: { date_geq: $startDate, date_leq: $endDate,` +
+    ` userAgent_like: "%${ua}%" }\n` +
     `      ) { count sum { edgeResponseBytes } }`
   ).join('\n');
   return (
-    `query AiCrawlers($zoneTag: String!, $startDatetime: Time!, $endDatetime: Time!) {\n` +
+    `query AiCrawlers($zoneTag: String!, $startDate: Date!, $endDate: Date!) {\n` +
     `  viewer {\n` +
     `    zones(filter: { zoneTag: $zoneTag }) {\n` +
     aliases + '\n' +
@@ -375,9 +366,9 @@ export class CloudflareClient {
         body: JSON.stringify({
           query: AI_CRAWLERS_QUERY,
           variables: {
-            zoneTag:       zoneId,
-            startDatetime: `${startDate}T00:00:00Z`,
-            endDatetime:   `${endDate}T23:59:59Z`,
+            zoneTag:   zoneId,
+            startDate: startDate,
+            endDate:   endDate,
           },
         }),
       });
