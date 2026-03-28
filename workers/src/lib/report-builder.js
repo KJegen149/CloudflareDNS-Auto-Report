@@ -116,6 +116,38 @@ async function _processOne(config, frequency, env) {
   }
 }
 
+/**
+ * Run a single report config immediately, on-demand.
+ * Used by the admin "Run Now" button.
+ *
+ * @param {number} id  - report_configs.id
+ * @param {object} env - Worker env bindings
+ * @returns {{ ok: boolean, error?: string }}
+ */
+export async function runReportById(id, env) {
+  const config = await env.DB.prepare(`
+    SELECT rc.id, rc.label, rc.zone_id, rc.zone_name, rc.frequency,
+           rc.recipients, rc.subject_prefix, rc.report_title,
+           rc.start_date, rc.end_date,
+           c.encrypted_token
+    FROM report_configs rc
+    JOIN credentials c ON c.id = rc.credential_id
+    WHERE rc.id = ?
+  `).bind(id).first();
+
+  if (!config) return { ok: false, error: 'Report config not found.' };
+
+  await _processOne(config, config.frequency, env);
+
+  // Check the run that was just recorded
+  const run = await env.DB.prepare(
+    'SELECT status, error_message FROM report_runs WHERE report_config_id=? ORDER BY sent_at DESC LIMIT 1',
+  ).bind(id).first();
+
+  if (run?.status === 'sent') return { ok: true };
+  return { ok: false, error: run?.error_message ?? 'Unknown error — check worker logs.' };
+}
+
 async function _recordRun(env, configId, zoneName, frequency, periodStart, periodEnd, status, errorMsg) {
   try {
     await env.DB.prepare(`

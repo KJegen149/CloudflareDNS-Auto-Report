@@ -19,7 +19,8 @@
  *   GET  /admin/history             → last 100 report runs
  */
 
-import { encryptToken } from './lib/crypto.js';
+import { encryptToken }   from './lib/crypto.js';
+import { runReportById } from './lib/report-builder.js';
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -306,6 +307,10 @@ async function pageReportList(env) {
           <input type="hidden" name="_method" value="${r.enabled ? 'PAUSE' : 'RESUME'}">
           <button class="btn btn-secondary btn-sm">${r.enabled ? 'Pause' : 'Resume'}</button>
         </form>
+        <form method="POST" action="/admin/reports/${r.id}/run" style="display:inline"
+              onsubmit="return confirm('Send this report now?')">
+          <button class="btn btn-primary btn-sm">Run Now</button>
+        </form>
         <form method="POST" action="/admin/reports/${r.id}" style="display:inline"
               onsubmit="return confirm('Delete this report configuration?')">
           <input type="hidden" name="_method" value="DELETE">
@@ -573,6 +578,35 @@ async function deleteReport(env, id) {
   return redirect('/admin/reports');
 }
 
+async function runReport(id, env) {
+  const config = await env.DB.prepare('SELECT label, zone_name FROM report_configs WHERE id=?').bind(id).first();
+  if (!config) return htmlResp(404, layout('Not Found', '<p>Report not found.</p>'));
+
+  const result = await runReportById(id, env);
+  const name   = esc(config.label ?? config.zone_name);
+
+  const body = result.ok
+    ? `<div class="card">
+        <p style="color:#1a5c32;font-weight:600;font-size:15px;margin-bottom:10px">Report sent successfully</p>
+        <p style="color:#555;font-size:13px">The report for <strong>${name}</strong> has been queued and sent to all configured recipients.</p>
+        <div style="margin-top:20px;display:flex;gap:10px">
+          <a class="btn btn-primary" href="/admin/reports">Back to Reports</a>
+          <a class="btn btn-secondary" href="/admin/history">View History</a>
+        </div>
+      </div>`
+    : `<div class="card">
+        <p style="color:#7b1c1c;font-weight:600;font-size:15px;margin-bottom:10px">Report failed</p>
+        <p style="color:#555;font-size:13px;margin-bottom:6px">Error running <strong>${name}</strong>:</p>
+        <code style="display:block;background:#fdf3f3;border:1px solid #f5c6cb;padding:10px 12px;border-radius:4px;font-size:12px;word-break:break-all">${esc(result.error)}</code>
+        <div style="margin-top:20px;display:flex;gap:10px">
+          <a class="btn btn-primary" href="/admin/reports">Back to Reports</a>
+          <a class="btn btn-secondary" href="/admin/history">View History</a>
+        </div>
+      </div>`;
+
+  return htmlResp(result.ok ? 200 : 500, layout(`Run: ${name}`, body, '/admin/reports'));
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 
 export async function handleAdmin(request, env) {
@@ -613,6 +647,9 @@ export async function handleAdmin(request, env) {
   }
   if (path === '/admin/reports/new' && method === 'GET')
     return pageReportForm(env);
+
+  const repRunM = path.match(/^\/admin\/reports\/(\d+)\/run$/);
+  if (repRunM && method === 'POST') return runReport(parseInt(repRunM[1], 10), env);
 
   const repM = path.match(/^\/admin\/reports\/(\d+)(\/edit)?$/);
   if (repM) {
