@@ -392,75 +392,72 @@ def chart_ai_crawlers(ai_traffic: list) -> Optional[str]:
 
 
 def chart_dns_by_colo(by_colo: list) -> Optional[str]:
-    """Horizontal bar chart for top Cloudflare data centers serving DNS queries."""
+    """Donut chart for top Cloudflare data centers serving DNS queries."""
     if not by_colo:
         return None
 
-    items  = by_colo[:10]
+    items  = by_colo[:8]
     names  = [d["dimensions"]["coloName"] for d in items]
     counts = [d["count"] for d in items]
-    display = names[::-1]
-    counts_r = counts[::-1]
+    if sum(counts) == 0:
+        return None
 
-    fig, ax = plt.subplots(figsize=(9, max(3.5, len(items) * 0.5 + 1.5)))
+    GEO_PALETTE = [
+        FOREST_GREEN, STEEL_BLUE, BURGUNDY, AMBER,
+        GREEN_LIGHT, BLUE_LIGHT, BURGUNDY_LIGHT, GRAY,
+    ]
+
+    fig, ax = plt.subplots(figsize=(7, 5.5))
     fig.patch.set_facecolor("white")
-    _style_ax(ax)
-    ax.grid(axis="x", alpha=0.25, linestyle="--", zorder=0)
-    ax.grid(axis="y", alpha=0, zorder=0)
 
-    y = list(range(len(display)))
-    bars = ax.barh(y, counts_r, color=FOREST_GREEN, alpha=0.85, zorder=3)
+    wedges, texts, autotexts = ax.pie(
+        counts,
+        labels=names,
+        autopct=lambda p: f"{p:.1f}%" if p > 3 else "",
+        colors=GEO_PALETTE[:len(names)],
+        pctdistance=0.80,
+        startangle=90,
+        wedgeprops={"width": 0.52, "linewidth": 0.8, "edgecolor": "white"},
+    )
+    for t in texts:
+        t.set_fontsize(8.5); t.set_color(NEAR_BLACK)
+    for a in autotexts:
+        a.set_fontsize(7.5); a.set_color("white"); a.set_fontweight("bold")
 
-    for bar, count in zip(bars, counts_r):
-        ax.text(
-            bar.get_width() * 1.008, bar.get_y() + bar.get_height() / 2,
-            _human(count), va="center", ha="left", fontsize=7, color=GRAY,
-        )
-
-    ax.set_yticks(y)
-    ax.set_yticklabels(display, fontsize=9)
-    ax.set_xlabel("DNS Queries", fontsize=9, color=GRAY)
-    ax.set_title("DNS Queries by Data Center", fontsize=13, fontweight="bold", color=NEAR_BLACK, pad=10)
-    ax.xaxis.set_major_formatter(mticker.FuncFormatter(_human_fmt))
-    ax.tick_params(axis="y", which="both", length=0)
-
+    ax.set_title("DNS Queries by Data Center", fontsize=13, fontweight="bold", color=NEAR_BLACK, pad=12)
     plt.tight_layout()
     return _fig_to_b64(fig)
 
 
 def chart_top_countries(by_country: list) -> Optional[str]:
-    """Horizontal bar chart for top countries by HTTP request volume."""
+    """Donut chart for top countries by HTTP request volume."""
     if not by_country:
         return None
 
-    items  = by_country[:10]
+    items  = by_country[:8]
     names  = [d["dimensions"].get("clientCountryName") or "Unknown" for d in items]
     counts = [d["count"] for d in items]
-    display = names[::-1]
-    counts_r = counts[::-1]
+    if sum(counts) == 0:
+        return None
 
-    fig, ax = plt.subplots(figsize=(9, max(3.5, len(items) * 0.5 + 1.5)))
+    fig, ax = plt.subplots(figsize=(7, 5.5))
     fig.patch.set_facecolor("white")
-    _style_ax(ax)
-    ax.grid(axis="x", alpha=0.25, linestyle="--", zorder=0)
-    ax.grid(axis="y", alpha=0, zorder=0)
 
-    y = list(range(len(display)))
-    bars = ax.barh(y, counts_r, color=BURGUNDY, alpha=0.85, zorder=3)
+    wedges, texts, autotexts = ax.pie(
+        counts,
+        labels=names,
+        autopct=lambda p: f"{p:.1f}%" if p > 3 else "",
+        colors=CHART_PALETTE[:len(names)],
+        pctdistance=0.80,
+        startangle=90,
+        wedgeprops={"width": 0.52, "linewidth": 0.8, "edgecolor": "white"},
+    )
+    for t in texts:
+        t.set_fontsize(8.5); t.set_color(NEAR_BLACK)
+    for a in autotexts:
+        a.set_fontsize(7.5); a.set_color("white"); a.set_fontweight("bold")
 
-    for bar, count in zip(bars, counts_r):
-        ax.text(
-            bar.get_width() * 1.008, bar.get_y() + bar.get_height() / 2,
-            _human(count), va="center", ha="left", fontsize=7, color=GRAY,
-        )
-
-    ax.set_yticks(y)
-    ax.set_yticklabels(display, fontsize=9)
-    ax.set_xlabel("HTTP Requests", fontsize=9, color=GRAY)
-    ax.set_title("Top Countries by Traffic", fontsize=13, fontweight="bold", color=NEAR_BLACK, pad=10)
-    ax.xaxis.set_major_formatter(mticker.FuncFormatter(_human_fmt))
-    ax.tick_params(axis="y", which="both", length=0)
-
+    ax.set_title("Top Countries by Traffic", fontsize=13, fontweight="bold", color=NEAR_BLACK, pad=12)
     plt.tight_layout()
     return _fig_to_b64(fig)
 
@@ -538,11 +535,23 @@ class ReportGenerator:
         ai_traffic    = report_data.get("ai_traffic", [])
         gateway       = report_data.get("gateway", {})
 
+        # Filter Top Queried Domains to website-facing records only (A/AAAA/CNAME).
+        # MX, TXT, DMARC, SPF etc. are backend plumbing, not pages people visit.
+        web_record_names = {
+            r["name"].rstrip(".")
+            for r in dns_records
+            if r.get("type") in ("A", "AAAA", "CNAME")
+        }
+        web_domains = [
+            row for row in analytics.get("byQueryName", [])
+            if row["dimensions"]["queryName"].rstrip(".") in web_record_names
+        ] or analytics.get("byQueryName", [])  # fallback: show all if no A/CNAME match
+
         charts = {
             "volume":       chart_query_volume(analytics.get("byDate", []), analytics.get("byCacheStatus", [])),
             "types":        chart_query_types(analytics.get("byQueryType", [])),
             "codes":        chart_response_codes(analytics.get("byResponseCode", [])),
-            "domains":      chart_top_domains(analytics.get("byQueryName", [])),
+            "domains":      chart_top_domains(web_domains),
             "colo":         chart_dns_by_colo(analytics.get("byColo", [])),
             "countries":    chart_top_countries(http_security.get("byCountry", [])),
             "ai_crawlers":  chart_ai_crawlers(ai_traffic),

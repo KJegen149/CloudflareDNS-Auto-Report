@@ -372,11 +372,6 @@ tbody td.mono {
       <div class="card-label">Resolution Success</div>
     </div>
 
-    <div class="card blue">
-      <div class="card-value">{{ metrics.cache_hit_pct | pct }}</div>
-      <div class="card-label">Cache Performance</div>
-    </div>
-
     {% if http_totals and http_totals.sum.edgeResponseBytes %}
     <div class="card">
       <div class="card-value">{{ human_bytes(http_totals.sum.edgeResponseBytes) }}</div>
@@ -546,11 +541,6 @@ tbody td.mono {
     {{ proxied_count }} record{{ 's' if proxied_count != 1 }} are routed through Cloudflare's network for added performance and protection.
     {% endif %}
   </p>
-  <div class="type-grid">
-    {% for rtype, count in metrics.record_type_counts.items() %}
-    <div class="type-chip"><span>{{ rtype }}</span> × {{ count }}</div>
-    {% endfor %}
-  </div>
 </div>
 {% endif %}
 
