@@ -87,15 +87,9 @@ query DnsReport($zoneTag: String!, $startDate: Date!, $endDate: Date!) {
 }
 """
 
-# Separate query for HTTP traffic and security events.
-# Uses datetime (ISO 8601) for firewallEventsAdaptiveGroups and date for HTTP.
-# Wrapped in a try/except at call time — only available for proxied (orange-cloud) zones.
-HTTP_SECURITY_QUERY = """
-query HttpAndSecurity(
-  $zoneTag: String!,
-  $startDate: Date!, $endDate: Date!,
-  $startDatetime: Time!, $endDatetime: Time!
-) {
+# Separate queries for HTTP traffic (1-day plan limit — chunked) and firewall events.
+HTTP_REQUESTS_QUERY = """
+query HttpRequests($zoneTag: String!, $startDate: Date!, $endDate: Date!) {
   viewer {
     zones(filter: { zoneTag: $zoneTag }) {
       byCountry: httpRequestsAdaptiveGroups(
@@ -112,6 +106,15 @@ query HttpAndSecurity(
       ) {
         sum { visits edgeResponseBytes }
       }
+    }
+  }
+}
+"""
+
+FIREWALL_EVENTS_QUERY = """
+query FirewallEvents($zoneTag: String!, $startDatetime: Time!, $endDatetime: Time!) {
+  viewer {
+    zones(filter: { zoneTag: $zoneTag }) {
       securityByAction: firewallEventsAdaptiveGroups(
         limit: 10
         filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
@@ -156,14 +159,6 @@ query GatewayInsights($accountTag: String!, $startDatetime: Time!, $endDatetime:
       ) {
         count
         dimensions { action }
-      }
-      gwHttpByApp: gatewayL7RequestsAdaptiveGroups(
-        limit: 10
-        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
-        orderBy: [count_DESC]
-      ) {
-        count
-        dimensions { applicationName }
       }
       gwTopBandwidth: gatewayL4SessionsAdaptiveGroups(
         limit: 10
@@ -424,37 +419,45 @@ class CloudflareClient:
         """
         Detect known AI crawlers hitting the zone via user-agent matching.
 
+        httpRequestsAdaptiveGroups has a 1-day plan limit on Free/Pro zones.
+        Iterates one day at a time and accumulates totals.
+
         Works on all Cloudflare plans — no Bot Management required.
         Returns a list of {name, count, bytes} dicts sorted by count descending.
         Returns empty list on any error.
         """
-        payload = {
-            "query": AI_CRAWLERS_QUERY,
-            "variables": {
-                "zoneTag":   zone_id,
-                "startDate": start_date,
-                "endDate":   end_date,
-            },
-        }
         try:
-            resp = self.session.post(GRAPHQL_ENDPOINT, json=payload, timeout=self.timeout)
-            resp.raise_for_status()
-            result = resp.json()
-            if result.get("errors"):
-                logger.info("AI crawler query errors for zone %s: %s", zone_id, result["errors"])
-                return []
-            zones = result.get("data", {}).get("viewer", {}).get("zones", [])
-            if not zones:
-                return []
-            data = zones[0]
+            start = date.fromisoformat(start_date)
+            end   = date.fromisoformat(end_date)
+            totals: dict = {alias: {"count": 0, "bytes": 0} for alias, _, _ in _AI_BOTS}
+
+            cur = start
+            while cur <= end:
+                day = cur.isoformat()
+                payload = {
+                    "query": AI_CRAWLERS_QUERY,
+                    "variables": {"zoneTag": zone_id, "startDate": day, "endDate": day},
+                }
+                resp = self.session.post(GRAPHQL_ENDPOINT, json=payload, timeout=self.timeout)
+                if resp.ok:
+                    result = resp.json()
+                    if not result.get("errors"):
+                        zones = result.get("data", {}).get("viewer", {}).get("zones", [])
+                        if zones:
+                            data = zones[0]
+                            for alias, _, _ in _AI_BOTS:
+                                bot_rows = data.get(alias, [])
+                                if bot_rows:
+                                    totals[alias]["count"] += bot_rows[0].get("count", 0)
+                                    totals[alias]["bytes"] += bot_rows[0].get("sum", {}).get("edgeResponseBytes", 0)
+                cur += timedelta(days=1)
+
             rows = []
             for alias, display_name, _ in _AI_BOTS:
-                bot_rows = data.get(alias, [])
-                if bot_rows:
-                    count = bot_rows[0].get("count", 0)
-                    bytes_served = bot_rows[0].get("sum", {}).get("edgeResponseBytes", 0)
-                    if count > 0:
-                        rows.append({"name": display_name, "count": count, "bytes": bytes_served})
+                c = totals[alias]["count"]
+                b = totals[alias]["bytes"]
+                if c > 0:
+                    rows.append({"name": display_name, "count": c, "bytes": b})
             return sorted(rows, key=lambda x: -x["count"])
         except Exception as exc:
             logger.info("AI traffic query failed for zone %s: %s", zone_id, exc)
@@ -464,36 +467,83 @@ class CloudflareClient:
         """
         Fetch HTTP traffic overview and security event counts via GraphQL.
 
-        This data is only available for zones with Cloudflare proxy enabled
-        (orange-cloud records). Returns an empty dict on any error so callers
-        can treat it as optional.
+        httpRequestsAdaptiveGroups has a 1-day plan limit on Free/Pro zones so
+        HTTP request data is fetched one day at a time and aggregated.
+        Firewall events use a datetime range and can span the full period.
+
+        Only available for zones with Cloudflare proxy enabled (orange-cloud).
+        Returns an empty dict on any error so callers can treat it as optional.
 
         Returns:
             Dict with keys: byCountry, httpTotals, securityByAction
         """
-        start_dt = f"{start_date}T00:00:00Z"
-        end_dt   = f"{end_date}T23:59:59Z"
-        payload = {
-            "query": HTTP_SECURITY_QUERY,
-            "variables": {
-                "zoneTag":        zone_id,
-                "startDate":      start_date,
-                "endDate":        end_date,
-                "startDatetime":  start_dt,
-                "endDatetime":    end_dt,
-            },
-        }
         try:
-            resp = self.session.post(GRAPHQL_ENDPOINT, json=payload, timeout=self.timeout)
-            resp.raise_for_status()
-            result = resp.json()
-            if result.get("errors"):
-                logger.warning("HTTP/security GraphQL errors for zone %s: %s", zone_id, result["errors"])
+            start = date.fromisoformat(start_date)
+            end   = date.fromisoformat(end_date)
+
+            # --- Chunk HTTP requests one day at a time ---
+            by_country:  dict = {}
+            total_visits = 0
+            total_bytes  = 0
+
+            cur = start
+            while cur <= end:
+                day = cur.isoformat()
+                payload = {
+                    "query": HTTP_REQUESTS_QUERY,
+                    "variables": {"zoneTag": zone_id, "startDate": day, "endDate": day},
+                }
+                resp = self.session.post(GRAPHQL_ENDPOINT, json=payload, timeout=self.timeout)
+                if resp.ok:
+                    result = resp.json()
+                    if not result.get("errors"):
+                        zones = result.get("data", {}).get("viewer", {}).get("zones", [])
+                        if zones:
+                            z = zones[0]
+                            for row in z.get("byCountry", []):
+                                k = row["dimensions"]["clientCountryName"]
+                                by_country[k] = by_country.get(k, 0) + row["count"]
+                            totals_rows = z.get("httpTotals", [])
+                            if totals_rows:
+                                s = totals_rows[0].get("sum", {})
+                                total_visits += s.get("visits", 0)
+                                total_bytes  += s.get("edgeResponseBytes", 0)
+                cur += timedelta(days=1)
+
+            # --- Firewall events: full datetime range (no per-zone day limit) ---
+            security_by_action: dict = {}
+            fw_payload = {
+                "query": FIREWALL_EVENTS_QUERY,
+                "variables": {
+                    "zoneTag":       zone_id,
+                    "startDatetime": f"{start_date}T00:00:00Z",
+                    "endDatetime":   f"{end_date}T23:59:59Z",
+                },
+            }
+            fw_resp = self.session.post(GRAPHQL_ENDPOINT, json=fw_payload, timeout=self.timeout)
+            if fw_resp.ok:
+                fw_result = fw_resp.json()
+                if not fw_result.get("errors"):
+                    fw_zones = fw_result.get("data", {}).get("viewer", {}).get("zones", [])
+                    if fw_zones:
+                        for row in fw_zones[0].get("securityByAction", []):
+                            k = row["dimensions"]["action"]
+                            security_by_action[k] = security_by_action.get(k, 0) + row["count"]
+
+            if not (by_country or total_visits or security_by_action):
                 return {}
-            zones = result.get("data", {}).get("viewer", {}).get("zones", [])
-            if not zones:
-                return {}
-            return zones[0]
+
+            def _to_rows(agg: dict, dim_key: str, limit: int) -> list:
+                return [
+                    {"dimensions": {dim_key: k}, "count": v}
+                    for k, v in sorted(agg.items(), key=lambda x: -x[1])
+                ][:limit]
+
+            return {
+                "byCountry":       _to_rows(by_country, "clientCountryName", 10),
+                "httpTotals":      [{"sum": {"visits": total_visits, "edgeResponseBytes": total_bytes}}],
+                "securityByAction": _to_rows(security_by_action, "action", 10),
+            }
         except Exception as exc:
             logger.warning("HTTP/security data unavailable for zone %s (proxy may be off): %s", zone_id, exc)
             return {}
