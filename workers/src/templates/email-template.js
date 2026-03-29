@@ -320,9 +320,9 @@ export function renderEmail({
 
   const maxGwDec  = gwDecisions[0]?.count ?? 1;
   const gwDecBars = gwDecisions.slice(0, 8).map(r => {
-    const d = (r.dimensions.resolverDecision || '').toLowerCase();
+    const d = String(r.dimensions.resolverDecision ?? '').toLowerCase();
     const color = d.includes('allow') ? C.green : d.includes('block') ? C.red : C.amber;
-    return barRow(r.dimensions.resolverDecision, r.count, maxGwDec, color);
+    return barRow(String(r.dimensions.resolverDecision ?? ''), r.count, maxGwDec, color);
   }).join('');
 
   const maxGwAct  = gwHttpActions[0]?.count ?? 1;
