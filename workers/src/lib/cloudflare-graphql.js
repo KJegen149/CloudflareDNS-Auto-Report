@@ -61,6 +61,14 @@ query DnsReport($zoneTag: String!, $startDate: Date!, $endDate: Date!) {
         dimensions { coloName }
         count
       }
+      byResponseCodeByDate: dnsAnalyticsAdaptiveGroups(
+        limit: 5000
+        filter: { date_geq: $startDate, date_leq: $endDate }
+        orderBy: [date_ASC]
+      ) {
+        dimensions { date responseCode }
+        count
+      }
     }
   }
 }
@@ -285,9 +293,18 @@ export class CloudflareClient {
 
     const zones = result?.data?.viewer?.zones ?? [];
     if (!zones.length) {
-      return { byDate: [], byQueryType: [], byResponseCode: [], byQueryName: [], byCacheStatus: [], byColo: [] };
+      return { byDate: [], byQueryType: [], byResponseCode: [], byQueryName: [], byCacheStatus: [], byColo: [], byResponseCodeByDate: [] };
     }
-    return zones[0];
+    const zone = zones[0];
+    return {
+      byDate:               zone.byDate               ?? [],
+      byQueryType:          zone.byQueryType          ?? [],
+      byResponseCode:       zone.byResponseCode       ?? [],
+      byQueryName:          zone.byQueryName          ?? [],
+      byCacheStatus:        zone.byCacheStatus        ?? [],
+      byColo:               zone.byColo               ?? [],
+      byResponseCodeByDate: zone.byResponseCodeByDate ?? [],
+    };
   }
 
   /**
@@ -396,7 +413,8 @@ export class CloudflareClient {
       if (result.errors?.length) return {};
       const accounts = result?.data?.viewer?.accounts ?? [];
       return accounts[0] ?? {};
-    } catch (_) {
+    } catch (err) {
+      console.warn(`getGatewayData error: ${err.message}`);
       return {};
     }
   }
@@ -408,8 +426,9 @@ export class CloudflareClient {
    */
   async getAiTrafficData(zoneId, startDate, endDate) {
     try {
-      const days = _dateDayRange(startDate, endDate);
+      const days   = _dateDayRange(startDate, endDate);
       const totals = Object.fromEntries(AI_BOTS.map(({ alias }) => [alias, { count: 0, bytes: 0 }]));
+      const byDay  = {};
 
       for (const day of days) {
         const resp = await fetch(GRAPHQL_ENDPOINT, {
@@ -423,13 +442,17 @@ export class CloudflareClient {
           const result = await resp.json();
           if (!result.errors?.length) {
             const data = result?.data?.viewer?.zones?.[0] ?? {};
+            let dayTotal = 0;
             for (const { alias } of AI_BOTS) {
               const botRows = data[alias] ?? [];
               if (botRows.length) {
-                totals[alias].count += botRows[0].count              ?? 0;
+                const c = botRows[0].count ?? 0;
+                totals[alias].count += c;
                 totals[alias].bytes += botRows[0].sum?.edgeResponseBytes ?? 0;
+                dayTotal += c;
               }
             }
+            if (dayTotal > 0) byDay[day] = (byDay[day] ?? 0) + dayTotal;
           }
         }
       }
@@ -440,9 +463,14 @@ export class CloudflareClient {
           rows.push({ name, count: totals[alias].count, bytes: totals[alias].bytes });
         }
       }
-      return rows.sort((a, b) => b.count - a.count);
+      return {
+        rows: rows.sort((a, b) => b.count - a.count),
+        byDay: Object.entries(byDay)
+          .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+          .map(([date, count]) => ({ date, count })),
+      };
     } catch (_) {
-      return [];
+      return { rows: [], byDay: [] };
     }
   }
 
@@ -451,8 +479,9 @@ export class CloudflareClient {
    * @param {string} zoneId
    * @param {'daily'|'weekly'|'monthly'} frequency
    * @param {number|null} lookbackOverrideDays
+   * @param {{ dns?: boolean, ztna?: boolean }} options
    */
-  async collectReportData(zoneId, frequency, lookbackOverrideDays = null) {
+  async collectReportData(zoneId, frequency, lookbackOverrideDays = null, options = {}) {
     const { start, end } = computeDateRange(frequency, lookbackOverrideDays);
 
     const [zoneInfo, dnsRecords, dnssec, analytics, httpSecurity] = await Promise.all([
@@ -463,9 +492,27 @@ export class CloudflareClient {
       this.getHttpSecurityData(zoneId, start, end),
     ]);
 
+    // Filter top queried names to only web-facing records:
+    // A records, AAAA records, and Cloudflare Tunnel CNAMEs (*.cfargotunnel.com)
+    const webNames = new Set(
+      dnsRecords
+        .filter(r =>
+          r.type === 'A' ||
+          r.type === 'AAAA' ||
+          (r.type === 'CNAME' && (r.content ?? '').includes('cfargotunnel.com')),
+        )
+        .map(r => (r.name ?? '').replace(/\.$/, '').toLowerCase()),
+    );
+    if (webNames.size > 0) {
+      const filtered = (analytics.byQueryName ?? []).filter(
+        row => webNames.has((row.dimensions.queryName ?? '').replace(/\.$/, '').toLowerCase()),
+      );
+      if (filtered.length > 0) analytics.byQueryName = filtered;
+    }
+
     const accountId = zoneInfo?.account?.id ?? '';
     const [gateway, aiTraffic] = await Promise.all([
-      this.getGatewayData(accountId, start, end),
+      options.ztna === false ? Promise.resolve({}) : this.getGatewayData(accountId, start, end),
       this.getAiTrafficData(zoneId, start, end),
     ]);
 
@@ -478,7 +525,8 @@ export class CloudflareClient {
       http_security: httpSecurity,
       gateway,
       ai_traffic:    aiTraffic,
-      period: { start, end, frequency },
+      period:        { start, end, frequency },
+      options:       { dns: options.dns !== false, ztna: options.ztna !== false },
     };
   }
 }
@@ -536,21 +584,27 @@ function _dateDayRange(startDate, endDate) {
 
 /** Merge multiple weekly analytics chunks into one combined result. */
 function mergeAnalytics(chunks) {
-  const byDate  = [];
-  const byType  = {};
-  const byCode  = {};
-  const byName  = {};
-  const byCache = {};
-  const byColo  = {};
+  const byDate     = [];
+  const byType     = {};
+  const byCode     = {};
+  const byName     = {};
+  const byCache    = {};
+  const byColo     = {};
+  const byRCByDate = {};
 
   for (const chunk of chunks) {
     byDate.push(...(chunk.byDate ?? []));
 
-    for (const row of chunk.byQueryType    ?? []) byType [row.dimensions.queryType]      = (byType [row.dimensions.queryType]      ?? 0) + row.count;
-    for (const row of chunk.byResponseCode ?? []) byCode [row.dimensions.responseCode]   = (byCode [row.dimensions.responseCode]   ?? 0) + row.count;
-    for (const row of chunk.byQueryName    ?? []) byName [row.dimensions.queryName]      = (byName [row.dimensions.queryName]      ?? 0) + row.count;
-    for (const row of chunk.byCacheStatus  ?? []) byCache[row.dimensions.responseCached] = (byCache[row.dimensions.responseCached] ?? 0) + row.count;
-    for (const row of chunk.byColo         ?? []) byColo [row.dimensions.coloName]       = (byColo [row.dimensions.coloName]       ?? 0) + row.count;
+    for (const row of chunk.byQueryType          ?? []) byType [row.dimensions.queryType]      = (byType [row.dimensions.queryType]      ?? 0) + row.count;
+    for (const row of chunk.byResponseCode       ?? []) byCode [row.dimensions.responseCode]   = (byCode [row.dimensions.responseCode]   ?? 0) + row.count;
+    for (const row of chunk.byQueryName          ?? []) byName [row.dimensions.queryName]      = (byName [row.dimensions.queryName]      ?? 0) + row.count;
+    for (const row of chunk.byCacheStatus        ?? []) byCache[row.dimensions.responseCached] = (byCache[row.dimensions.responseCached] ?? 0) + row.count;
+    for (const row of chunk.byColo               ?? []) byColo [row.dimensions.coloName]       = (byColo [row.dimensions.coloName]       ?? 0) + row.count;
+    for (const row of chunk.byResponseCodeByDate ?? []) {
+      const key = `${row.dimensions.date}:${row.dimensions.responseCode}`;
+      if (!byRCByDate[key]) byRCByDate[key] = { dimensions: { date: row.dimensions.date, responseCode: row.dimensions.responseCode }, count: 0 };
+      byRCByDate[key].count += row.count;
+    }
   }
 
   const toRows = (agg, dimKey, limit) =>
@@ -561,10 +615,12 @@ function mergeAnalytics(chunks) {
 
   return {
     byDate,
-    byQueryType:    toRows(byType,  'queryType',      20),
-    byResponseCode: toRows(byCode,  'responseCode',   20),
-    byQueryName:    toRows(byName,  'queryName',      15),
-    byCacheStatus:  toRows(byCache, 'responseCached',  5),
-    byColo:         toRows(byColo,  'coloName',       10),
+    byQueryType:          toRows(byType,  'queryType',      20),
+    byResponseCode:       toRows(byCode,  'responseCode',   20),
+    byQueryName:          toRows(byName,  'queryName',      15),
+    byCacheStatus:        toRows(byCache, 'responseCached',  5),
+    byColo:               toRows(byColo,  'coloName',       10),
+    byResponseCodeByDate: Object.values(byRCByDate)
+      .sort((a, b) => (a.dimensions.date < b.dimensions.date ? -1 : a.dimensions.date > b.dimensions.date ? 1 : 0)),
   };
 }

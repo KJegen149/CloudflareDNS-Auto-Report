@@ -2,7 +2,7 @@
  * HTML email template for the Workers deployment.
  *
  * Table-based layout with inline styles for broad email client compatibility.
- * CSS-only bar charts (no images, no external resources).
+ * CSS-only bar charts and SVG donut chart (no images, no external resources).
  * All sections are conditional on data availability.
  */
 
@@ -22,6 +22,12 @@ const C = {
   bgLight:      '#f8f5f6',
   border:       '#e5d7d9',
 };
+
+// Ten distinct colors for the country pie chart
+const PIE_COLORS = [
+  '#722F37', '#2E6DA4', '#2D7D46', '#D97706', '#6B3FA0',
+  '#C0392B', '#1a3a5c', '#E67E22', '#156D3B', '#8E44AD',
+];
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -58,10 +64,6 @@ function pill(text, bg, fg) {
 
 /**
  * One horizontal bar row for a CSS bar chart.
- * @param {string} label
- * @param {number} count
- * @param {number} maxCount - used to compute width %
- * @param {string} color    - bar fill color
  */
 function barRow(label, count, maxCount, color) {
   const pct     = maxCount > 0 ? Math.max(Math.round((count / maxCount) * 100), 2) : 2;
@@ -91,6 +93,65 @@ function summaryCard(value, label, accentColor) {
   </td>`;
 }
 
+/**
+ * SVG donut chart with a colour-coded legend table beside it.
+ * Used for Web Traffic by Country.
+ */
+function countryPieChart(byCountry, httpVisits) {
+  const items = byCountry.slice(0, 10);
+  if (!items.length) return '';
+
+  const countTotal   = items.reduce((s, r) => s + r.count, 0);
+  const displayTotal = httpVisits > 0 ? httpVisits : countTotal;
+
+  // SVG donut using stroke-dasharray trick (starts at 12 o'clock)
+  const R = 55, CX = 70, CY = 70, SW = 22;
+  const circ = 2 * Math.PI * R;
+  let cum = 0;
+
+  const circles = items.map((item, i) => {
+    const frac   = countTotal > 0 ? item.count / countTotal : 0;
+    const dash   = frac * circ;
+    const offset = circ / 4 - cum;
+    cum += dash;
+    return `<circle cx="${CX}" cy="${CY}" r="${R}" fill="none" stroke="${PIE_COLORS[i % PIE_COLORS.length]}" ` +
+      `stroke-width="${SW}" ` +
+      `stroke-dasharray="${dash.toFixed(1)} ${(circ - dash).toFixed(1)}" ` +
+      `stroke-dashoffset="${offset.toFixed(1)}"/>`;
+  }).join('');
+
+  const svg = `<svg width="140" height="140" viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg">
+    ${circles}
+    <circle cx="${CX}" cy="${CY}" r="${R - SW / 2 - 2}" fill="white"/>
+    <text x="${CX}" y="${CY - 4}" text-anchor="middle" font-family="Arial,sans-serif"
+          font-size="15" font-weight="700" fill="${C.burgundy}">${human(displayTotal)}</text>
+    <text x="${CX}" y="${CY + 13}" text-anchor="middle" font-family="Arial,sans-serif"
+          font-size="9" fill="${C.grayLight}">visits</text>
+  </svg>`;
+
+  const legendRows = items.map((item, i) => {
+    const country = item.dimensions.clientCountryName || 'Unknown';
+    const pct     = countTotal > 0 ? ((item.count / countTotal) * 100).toFixed(1) : '0';
+    return `<tr>
+      <td style="padding:3px 6px 3px 0;vertical-align:middle;">
+        <div style="width:10px;height:10px;border-radius:2px;background:${PIE_COLORS[i % PIE_COLORS.length]};"></div>
+      </td>
+      <td style="font-size:11px;color:${C.nearBlack};padding:3px 16px 3px 2px;white-space:nowrap;">${country}</td>
+      <td style="font-size:11px;color:${C.grayLight};padding:3px 0;text-align:right;">${pct}%</td>
+      <td style="font-size:11px;color:${C.gray};padding:3px 0 3px 10px;text-align:right;font-weight:600;">${human(item.count)}</td>
+    </tr>`;
+  }).join('');
+
+  return `<table cellpadding="0" cellspacing="0">
+    <tr>
+      <td valign="middle">${svg}</td>
+      <td valign="middle" style="padding-left:24px;">
+        <table cellpadding="0" cellspacing="0">${legendRows}</table>
+      </td>
+    </tr>
+  </table>`;
+}
+
 // ── Metrics ───────────────────────────────────────────────────────────────────
 
 function computeMetrics(analytics, httpSecurity) {
@@ -115,16 +176,6 @@ function computeMetrics(analytics, httpSecurity) {
     bandwidth,
   };
 }
-
-// ── Response code metadata ────────────────────────────────────────────────────
-
-const CODE_META = {
-  NOERROR:  { label: 'OK',             bg: '#d1f0de', fg: '#1a5c32' },
-  NXDOMAIN: { label: 'Not Found',      bg: '#fce8e8', fg: '#7b1c1c' },
-  SERVFAIL: { label: 'Server Failure', bg: '#fce8e8', fg: '#7b1c1c' },
-  REFUSED:  { label: 'Refused',        bg: '#fef3d0', fg: '#7a4a00' },
-  FORMERR:  { label: 'Format Error',   bg: '#ddeeff', fg: '#1a3d6e' },
-};
 
 const SEC_ACTION_COLORS = {
   block:             C.red,
@@ -159,8 +210,10 @@ const SEC_ACTION_LABELS = {
  * @param {Array}    opts.dnsRecords
  * @param {object}   opts.dnssec
  * @param {object}   opts.httpSecurity   - { byCountry, httpTotals, securityByAction }
- * @param {Array}    opts.aiTraffic      - [{ name, count, bytes }]
+ * @param {object}   opts.aiTraffic      - { rows: [{name,count,bytes}], byDay: [{date,count}] }
  * @param {object}   opts.gateway        - { gwDnsByDecision, gwDnsTopDomains, gwHttpByAction, gwTopBandwidth }
+ * @param {boolean}  opts.reportDns      - show DNS analytics sections
+ * @param {boolean}  opts.reportZtna     - show Gateway/ZTNA section
  * @param {string}   opts.generatedAt
  */
 export function renderEmail({
@@ -172,8 +225,10 @@ export function renderEmail({
   dnsRecords,
   dnssec,
   httpSecurity = {},
-  aiTraffic    = [],
+  aiTraffic    = {},
   gateway      = {},
+  reportDns    = true,
+  reportZtna   = true,
   generatedAt,
 }) {
   const freq = frequency.charAt(0).toUpperCase() + frequency.slice(1);
@@ -192,37 +247,48 @@ export function renderEmail({
     </td>`;
   }).join('');
 
-  // ── Top queried domains (A/CNAME filtered in report-builder) ──────────────
+  // ── Top queried domains (filtered to A/AAAA/Tunnel in graphql layer) ───────
   const topNames   = analytics.byQueryName ?? [];
   const maxNames   = topNames[0]?.count ?? 1;
   const domainBars = topNames.slice(0, 12)
     .map(d => barRow(d.dimensions.queryName, d.count, maxNames, C.blue)).join('');
 
-  // ── Response codes ─────────────────────────────────────────────────────────
-  const codeRows = (analytics.byResponseCode ?? []).slice(0, 6).map(d => {
-    const code  = d.dimensions.responseCode;
-    const count = d.count;
-    const pct   = m.total > 0 ? ((count / m.total) * 100).toFixed(2) : '0.00';
-    const meta  = CODE_META[code] ?? { label: code, bg: '#f0f0f0', fg: '#555' };
-    return `<tr style="border-bottom:1px solid ${C.border};">
-      <td style="padding:7px 12px;font-family:monospace;font-size:12px;font-weight:600;">${code}</td>
-      <td style="padding:7px 12px;font-size:12px;">${human(count)}</td>
-      <td style="padding:7px 12px;font-size:12px;">${pct}%</td>
-      <td style="padding:7px 12px;">${pill(meta.label, meta.bg, meta.fg)}</td>
-    </tr>`;
+  // ── Connection success over time ───────────────────────────────────────────
+  const byCodeByDate = analytics.byResponseCodeByDate ?? [];
+  const daySuccess   = {};
+  for (const row of byCodeByDate) {
+    const { date, responseCode } = row.dimensions;
+    if (!daySuccess[date]) daySuccess[date] = { success: 0, fail: 0, total: 0 };
+    daySuccess[date].total += row.count;
+    if (responseCode === 'NOERROR') daySuccess[date].success += row.count;
+    else                            daySuccess[date].fail    += row.count;
+  }
+  const daySuccessSorted = Object.entries(daySuccess).sort(([a], [b]) => a.localeCompare(b));
+  const maxDayTotal      = Math.max(...daySuccessSorted.map(([, d]) => d.total), 1);
+  const periodSuccess    = daySuccessSorted.reduce((s, [, d]) => s + d.success, 0);
+  const periodFail       = daySuccessSorted.reduce((s, [, d]) => s + d.fail, 0);
+  const periodTotal      = periodSuccess + periodFail;
+  const periodSuccessPct = periodTotal > 0 ? ((periodSuccess / periodTotal) * 100).toFixed(1) : '0';
+
+  const successBars = daySuccessSorted.map(([date, d]) => {
+    const pct    = d.total > 0 ? d.success / d.total : 0;
+    const height = Math.max(Math.round((d.total / maxDayTotal) * 65), 3);
+    const color  = pct >= 0.99 ? C.green : pct >= 0.95 ? C.amber : C.red;
+    const dt     = date.slice(5);
+    return `<td style="text-align:center;vertical-align:bottom;padding:0 2px;">
+      <div style="background:${color};height:${height}px;border-radius:2px 2px 0 0;min-width:8px;opacity:0.9;"></div>
+      <div style="font-size:8px;color:${C.grayLight};margin-top:2px;">${dt}</div>
+    </td>`;
   }).join('');
 
-  // ── Traffic by country ─────────────────────────────────────────────────────
-  const byCountry   = httpSecurity.byCountry ?? [];
-  const maxCountry  = byCountry[0]?.count ?? 1;
-  const countryBars = byCountry.slice(0, 10)
-    .map(d => barRow(d.dimensions.clientCountryName || 'Unknown', d.count, maxCountry, C.blue))
-    .join('');
+  // ── Traffic by country (pie chart) ────────────────────────────────────────
+  const byCountry    = httpSecurity.byCountry ?? [];
+  const countryChart = byCountry.length ? countryPieChart(byCountry, m.httpVisits) : '';
 
   // ── Security events ────────────────────────────────────────────────────────
-  const secActions  = (httpSecurity.securityByAction ?? []).filter(r => r.count > 0);
-  const maxSec      = secActions[0]?.count ?? 1;
-  const secBars = secActions.slice(0, 8).map(r => {
+  const secActions = (httpSecurity.securityByAction ?? []).filter(r => r.count > 0);
+  const maxSec     = secActions[0]?.count ?? 1;
+  const secBars    = secActions.slice(0, 8).map(r => {
     const action = r.dimensions?.action ?? '';
     const label  = SEC_ACTION_LABELS[action] ?? action;
     const color  = SEC_ACTION_COLORS[action]  ?? C.gray;
@@ -230,9 +296,21 @@ export function renderEmail({
   }).join('');
 
   // ── AI crawlers ────────────────────────────────────────────────────────────
-  const aiRows = aiTraffic.slice(0, 8);
-  const maxAi  = aiRows[0]?.count ?? 1;
-  const aiBars = aiRows.map(r => barRow(r.name, r.count, maxAi, C.purple)).join('');
+  const aiRows   = (aiTraffic.rows  ?? []).slice(0, 8);
+  const aiByDay  =  aiTraffic.byDay ?? [];
+  const maxAi    = aiRows[0]?.count ?? 1;
+  const aiBars   = aiRows.map(r => barRow(r.name, r.count, maxAi, C.purple)).join('');
+
+  const maxAiDay  = Math.max(...aiByDay.map(d => d.count), 1);
+  const aiDayBars = aiByDay.map(d => {
+    const pct = Math.max(Math.round((d.count / maxAiDay) * 100), 2);
+    const dt  = d.date.slice(5);
+    return `<td style="text-align:center;vertical-align:bottom;padding:0 2px;">
+      <div style="background:${C.purple};height:${Math.max(pct * 0.60, 3)}px;
+                  border-radius:2px 2px 0 0;opacity:0.85;min-width:8px;"></div>
+      <div style="font-size:8px;color:${C.grayLight};margin-top:2px;">${dt}</div>
+    </td>`;
+  }).join('');
 
   // ── Gateway / ZTNA ────────────────────────────────────────────────────────
   const gwDecisions   = gateway.gwDnsByDecision  ?? [];
@@ -241,46 +319,28 @@ export function renderEmail({
   const gwBandwidth   = gateway.gwTopBandwidth   ?? [];
   const hasGateway    = gwDecisions.length > 0 || gwHttpActions.length > 0 || gwBandwidth.length > 0;
 
-  const maxGwDec   = gwDecisions[0]?.count ?? 1;
-  const gwDecBars  = gwDecisions.slice(0, 8).map(r => {
+  const maxGwDec  = gwDecisions[0]?.count ?? 1;
+  const gwDecBars = gwDecisions.slice(0, 8).map(r => {
     const d = (r.dimensions.resolverDecision || '').toLowerCase();
     const color = d.includes('allow') ? C.green : d.includes('block') ? C.red : C.amber;
     return barRow(r.dimensions.resolverDecision, r.count, maxGwDec, color);
   }).join('');
 
-  const maxGwAct   = gwHttpActions[0]?.count ?? 1;
-  const gwActBars  = gwHttpActions.slice(0, 6).map(r => {
+  const maxGwAct  = gwHttpActions[0]?.count ?? 1;
+  const gwActBars = gwHttpActions.slice(0, 6).map(r => {
     const action = r.dimensions.action ?? '';
     const color  = { allow: C.green, block: C.red, isolate: C.amber }[action] ?? C.gray;
     return barRow(action, r.count, maxGwAct, color);
   }).join('');
 
-  const maxGwDom   = gwTopDomains[0]?.count ?? 1;
-  const gwDomBars  = gwTopDomains.slice(0, 10).map(r => {
+  const maxGwDom  = gwTopDomains[0]?.count ?? 1;
+  const gwDomBars = gwTopDomains.slice(0, 10).map(r => {
     const domain = (r.dimensions.queryNameReversed ?? '').split('.').reverse().join('.');
     return barRow(domain, r.count, maxGwDom, C.purple);
   }).join('');
 
-  // ── DNS records ────────────────────────────────────────────────────────────
-  const sorted = [...dnsRecords]
-    .sort((a, b) => (a.type + a.name).localeCompare(b.type + b.name))
-    .slice(0, 50);
-
-  const recordRows = sorted.map(r => {
-    const content = (r.content ?? '').length > 60
-      ? r.content.slice(0, 60) + '…' : (r.content ?? '');
-    const ttl     = r.ttl === 1 ? 'Auto' : String(r.ttl ?? '');
-    const proxied = r.proxiable && r.proxied
-      ? `<span style="color:#F6821F;font-weight:600;">Proxied</span>`
-      : `<span style="color:${C.grayLight};">DNS Only</span>`;
-    return `<tr style="border-bottom:1px solid ${C.border};">
-      <td style="padding:5px 10px;">${pill(r.type, '#ddeeff', '#1a3d6e')}</td>
-      <td style="padding:5px 10px;font-family:monospace;font-size:11px;">${r.name ?? ''}</td>
-      <td style="padding:5px 10px;font-family:monospace;font-size:11px;color:#333;">${content}</td>
-      <td style="padding:5px 10px;font-size:11px;color:${C.gray};">${ttl}</td>
-      <td style="padding:5px 10px;font-size:11px;">${proxied}</td>
-    </tr>`;
-  }).join('');
+  // ── DNS config summary ─────────────────────────────────────────────────────
+  const proxied = dnsRecords.filter(r => r.proxied).length;
 
   // ── DNSSEC ─────────────────────────────────────────────────────────────────
   const dsStatus = (dnssec?.status ?? 'unknown').toLowerCase();
@@ -369,8 +429,8 @@ export function renderEmail({
     </td>
   </tr>
 
+  ${reportDns && byDate.length ? `
   <!-- QUERY VOLUME BY DAY ─────────────────────────────────────── -->
-  ${byDate.length ? `
   ${sectionTitle('DNS Activity Over Time')}
   <tr><td style="padding:0 32px 16px;">
     <table width="100%" cellpadding="0" cellspacing="0">
@@ -378,57 +438,63 @@ export function renderEmail({
     </table>
   </td></tr>` : ''}
 
+  ${reportDns && domainBars ? `
   <!-- TOP QUERIED DOMAINS ─────────────────────────────────────── -->
-  ${domainBars ? `
   ${sectionTitle('Most Active Services &amp; Domains')}
   <tr><td style="padding:0 32px 16px;">
     <table width="100%" cellpadding="0" cellspacing="0">${domainBars}</table>
   </td></tr>` : ''}
 
+  ${countryChart ? `
   <!-- TRAFFIC BY COUNTRY ──────────────────────────────────────── -->
-  ${countryBars ? `
   ${sectionTitle('Web Traffic by Country')}
-  <tr><td style="padding:0 32px 6px;">
-    ${m.httpVisits > 0 ? `<div style="font-size:11px;color:${C.gray};margin-bottom:8px;">
-      Total visits: <strong>${human(m.httpVisits)}</strong>
-      ${m.bandwidth > 0 ? ` &bull; Bandwidth: <strong>${humanBytes(m.bandwidth)}</strong>` : ''}
-    </div>` : ''}
-    <table width="100%" cellpadding="0" cellspacing="0">${countryBars}</table>
-  </td></tr>
-  <tr><td style="padding:0 32px 16px;"></td></tr>` : ''}
-
-  <!-- RESPONSE CODE ANALYSIS ──────────────────────────────────── -->
-  ${codeRows ? `
-  ${sectionTitle('DNS Response Codes')}
   <tr><td style="padding:0 32px 16px;">
-    <div style="border:1px solid ${C.border};border-radius:4px;overflow:hidden;">
-      <table width="100%" cellpadding="0" cellspacing="0">
-        <thead><tr style="background:${C.burgundy};">
-          <th style="padding:7px 12px;text-align:left;color:#fff;font-size:10px;text-transform:uppercase;">Code</th>
-          <th style="padding:7px 12px;text-align:left;color:#fff;font-size:10px;text-transform:uppercase;">Count</th>
-          <th style="padding:7px 12px;text-align:left;color:#fff;font-size:10px;text-transform:uppercase;">Share</th>
-          <th style="padding:7px 12px;text-align:left;color:#fff;font-size:10px;text-transform:uppercase;">Status</th>
-        </tr></thead>
-        <tbody>${codeRows}</tbody>
-      </table>
-    </div>
+    ${m.bandwidth > 0 ? `<div style="font-size:11px;color:${C.gray};margin-bottom:12px;">
+      Bandwidth: <strong>${humanBytes(m.bandwidth)}</strong>
+    </div>` : ''}
+    ${countryChart}
   </td></tr>` : ''}
 
-  <!-- SECURITY EVENTS ─────────────────────────────────────────── -->
+  ${reportDns && daySuccessSorted.length ? `
+  <!-- CONNECTION SUCCESS OVER TIME ────────────────────────────── -->
+  ${sectionTitle('Connection Success Over Time')}
+  <tr><td style="padding:0 32px 6px;">
+    <div style="font-size:11px;color:${C.gray};margin-bottom:8px;">
+      <span style="color:${C.green};font-weight:700;">&#9632;</span> &gt;99% success &nbsp;&nbsp;
+      <span style="color:${C.amber};font-weight:700;">&#9632;</span> 95–99% &nbsp;&nbsp;
+      <span style="color:${C.red};font-weight:700;">&#9632;</span> &lt;95%
+      &nbsp;&nbsp;|&nbsp;&nbsp;
+      Period: <strong>${periodSuccessPct}%</strong> successful
+      ${periodFail > 0 ? `(${human(periodFail)} failed of ${human(periodTotal)})` : ''}
+    </div>
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr style="vertical-align:bottom;height:75px;">${successBars}</tr>
+    </table>
+  </td></tr>
+  <tr><td style="padding:0 32px 12px;"></td></tr>` : ''}
+
   ${secBars ? `
+  <!-- SECURITY EVENTS ─────────────────────────────────────────── -->
   ${sectionTitle('Security Events')}
   <tr><td style="padding:0 32px 16px;">
     <table width="100%" cellpadding="0" cellspacing="0">${secBars}</table>
   </td></tr>` : ''}
 
+  ${(aiBars || aiDayBars) ? `
   <!-- AI CRAWLER ACTIVITY ─────────────────────────────────────── -->
-  ${aiBars ? `
   ${sectionTitle('AI Crawler Activity')}
   <tr><td style="padding:0 32px 6px;">
-    <div style="font-size:11px;color:${C.gray};margin-bottom:8px;">
-      Known AI companies crawling this website, detected by user-agent.
+    <div style="font-size:11px;color:${C.gray};margin-bottom:10px;">
+      Known AI companies crawling this website, detected by user-agent signature.
       Use Cloudflare AI Crawl Control to allow or block specific crawlers.
     </div>
+    ${aiDayBars ? `
+    <div style="font-size:10px;font-weight:600;color:${C.gray};margin-bottom:4px;text-transform:uppercase;letter-spacing:0.4px;">Total AI Traffic by Day</div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px;">
+      <tr style="vertical-align:bottom;height:60px;">${aiDayBars}</tr>
+    </table>` : ''}
+    ${aiBars ? `
+    <div style="font-size:10px;font-weight:600;color:${C.gray};margin-bottom:4px;text-transform:uppercase;letter-spacing:0.4px;">Activity by Crawler</div>
     <table width="100%" cellpadding="0" cellspacing="0">${aiBars}</table>
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:4px;">
       ${aiRows.map(r => `<tr>
@@ -436,10 +502,11 @@ export function renderEmail({
                    font-family:monospace;">${r.name}</td>
         <td style="font-size:11px;color:${C.gray};">${humanBytes(r.bytes)}</td>
       </tr>`).join('')}
-    </table>
+    </table>` : ''}
   </td></tr>
   <tr><td style="padding:0 32px 16px;"></td></tr>` : ''}
 
+  ${reportDns ? `
   <!-- DNSSEC STATUS ───────────────────────────────────────────── -->
   ${sectionTitle('DNS Security (DNSSEC)')}
   <tr><td style="padding:0 32px 16px;">
@@ -461,33 +528,19 @@ export function renderEmail({
   </td></tr>
 
   <!-- DNS CONFIGURATION SUMMARY ───────────────────────────────── -->
-  ${recordRows ? `
-  ${sectionTitle(`DNS Configuration (${dnsRecords.length} record${dnsRecords.length !== 1 ? 's' : ''})`)}
+  ${sectionTitle('DNS Configuration')}
   <tr><td style="padding:0 32px 16px;">
-    ${(() => {
-      const proxied = dnsRecords.filter(r => r.proxied).length;
-      return `<div style="font-size:11px;color:${C.gray};margin-bottom:10px;">
-        ${dnsRecords.length} records configured.
-        ${proxied > 0 ? `${proxied} record${proxied !== 1 ? 's' : ''} routed through Cloudflare's network for added performance and protection.` : ''}
-        ${dnsRecords.length > 50 ? ' Showing first 50.' : ''}
-      </div>`;
-    })()}
-    <div style="border:1px solid ${C.border};border-radius:4px;overflow:hidden;">
-      <table width="100%" cellpadding="0" cellspacing="0">
-        <thead><tr style="background:${C.burgundy};">
-          <th style="padding:7px 10px;text-align:left;color:#fff;font-size:10px;text-transform:uppercase;width:9%;">Type</th>
-          <th style="padding:7px 10px;text-align:left;color:#fff;font-size:10px;text-transform:uppercase;width:28%;">Name</th>
-          <th style="padding:7px 10px;text-align:left;color:#fff;font-size:10px;text-transform:uppercase;">Content</th>
-          <th style="padding:7px 10px;text-align:left;color:#fff;font-size:10px;text-transform:uppercase;width:8%;">TTL</th>
-          <th style="padding:7px 10px;text-align:left;color:#fff;font-size:10px;text-transform:uppercase;width:10%;">Proxy</th>
-        </tr></thead>
-        <tbody>${recordRows}</tbody>
-      </table>
+    <div style="border:1px solid ${C.border};border-radius:4px;padding:14px 18px;
+                background:${C.bgLight};font-size:12px;color:${C.gray};line-height:1.7;">
+      <strong style="color:${C.nearBlack};">${dnsRecords.length}</strong> DNS records configured.
+      ${proxied > 0
+        ? `<strong style="color:${C.burgundy};">${proxied}</strong> record${proxied !== 1 ? 's' : ''} routed through Cloudflare's network for added performance and protection.`
+        : 'No records are currently proxied through Cloudflare.'}
     </div>
   </td></tr>` : ''}
 
+  ${reportZtna && hasGateway ? `
   <!-- SECTION BANNER: GATEWAY / ZTNA ─────────────────────────── -->
-  ${hasGateway ? `
   <tr>
     <td style="background:#1a3a5c;padding:10px 32px;margin-top:8px;">
       <span style="font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:1px;">
