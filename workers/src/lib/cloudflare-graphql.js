@@ -156,7 +156,7 @@ query GatewayInsights($accountTag: String!, $startDatetime: Time!, $endDatetime:
       gwTopBandwidth: gatewayL4SessionsAdaptiveGroups(
         limit: 10
         filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
-        orderBy: [sum_bytesIngress_DESC]
+        orderBy: [count_DESC]
       ) {
         sum { bytesIngress bytesEgress }
         dimensions { email }
@@ -415,10 +415,10 @@ export class CloudflareClient {
       const result = await resp.json();
       if (result.errors?.length) {
         console.warn(`getGatewayData GraphQL errors for account ${accountId}: ${JSON.stringify(result.errors.slice(0, 2))}`);
-        return {};
+        // Fall through — GraphQL may still return partial data alongside errors
       }
       const accounts = result?.data?.viewer?.accounts ?? [];
-      console.log(`getGatewayData: ${accounts.length} account(s) returned for ${accountId}, keys: ${JSON.stringify(Object.keys(accounts[0] ?? {}))}`);
+      console.log(`getGatewayData: ${accounts.length} account(s) for ${accountId}, keys: ${JSON.stringify(Object.keys(accounts[0] ?? {}))}`);
       return accounts[0] ?? {};
     } catch (err) {
       console.warn(`getGatewayData error: ${err.message}`);
