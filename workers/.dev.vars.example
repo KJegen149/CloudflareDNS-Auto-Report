@@ -1,0 +1,14 @@
+# Local dev secrets for Cloudflare Workers (copy to .dev.vars, never commit .dev.vars)
+# In production, set these via: wrangler secret put SECRET_NAME
+
+# ─── Cloudflare API Tokens ────────────────────────────────────────────────────
+# One entry per account. The name must match api_token_secret in KV config.
+# Required scopes: Zone.DNS:Read, Zone.Zone:Read, Zone.Analytics:Read
+CF_TOKEN_APPLE_JUICE=your_cloudflare_api_token_here
+CF_TOKEN_ORANGE_JUICE=your_cloudflare_api_token_here
+
+# ─── Email API (Resend - https://resend.com) ──────────────────────────────────
+# Free tier: 3,000 emails/month, 100/day. Sign up at resend.com.
+RESEND_API_KEY=re_your_api_key_here
+EMAIL_FROM_ADDRESS=reports@yourdomain.com
+EMAIL_FROM_NAME=Cloudflare DNS Reports

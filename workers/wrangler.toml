@@ -1,0 +1,33 @@
+name = "cloudflare-dns-auto-report"
+main = "src/index.js"
+compatibility_date = "2026-03-26"
+account_id = "9f86f3b73ff40da02bce7f31c93e98bd"
+
+# ── Cron triggers ─────────────────────────────────────────────────────────────
+# All fire at 08:00 UTC. The worker reads matching report_configs from D1.
+[triggers]
+crons = [
+  "0 8 * * *",   # daily   — every day at 08:00 UTC
+  "0 8 * * 1",   # weekly  — every Monday at 08:00 UTC
+  "0 8 1 * *",   # monthly — 1st of every month at 08:00 UTC
+]
+
+# ── D1 database ───────────────────────────────────────────────────────────────
+# Create with: wrangler d1 create dns-reports
+# Then apply schema: wrangler d1 execute dns-reports --file=workers/db/schema.sql
+[[d1_databases]]
+binding       = "DB"
+database_name = "dns-reports"
+database_id   = "31be2310-8420-4651-b079-e078909fece2"
+
+# ── Secrets (set via: wrangler secret put <NAME>) ─────────────────────────────
+# RESEND_API_KEY        — Resend transactional email API key (resend.com)
+# EMAIL_FROM_ADDRESS    — Sender address (must be verified in Resend)
+# EMAIL_FROM_NAME       — Sender display name, e.g. "Website Analytics"
+# ADMIN_PASSWORD        — Password for the /admin management UI (HTTP Basic Auth)
+# TOKEN_ENCRYPTION_KEY  — 64-char hex key for AES-256-GCM token storage
+#                         Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+# ── Observability ─────────────────────────────────────────────────────────────
+[observability]
+enabled = true

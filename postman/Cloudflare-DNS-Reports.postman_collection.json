@@ -1,0 +1,252 @@
+{
+  "info": {
+    "name": "Cloudflare DNS Auto-Report — API Explorer",
+    "_postman_id": "cf-dns-auto-report-v1",
+    "description": "Explore and test the Cloudflare APIs used by the DNS Auto-Report system.\n\n## Setup\n1. Create a Postman Environment with:\n   - `CF_API_TOKEN`   — your Cloudflare API token (Zone.DNS:Read, Zone.Zone:Read, Zone.Analytics:Read)\n   - `CF_ZONE_ID`     — target zone ID (found in the Cloudflare dashboard Overview page)\n   - `CF_ACCOUNT_ID`  — your Cloudflare account ID\n   - `START_DATE`     — report start date, e.g. 2026-03-01\n   - `END_DATE`       — report end date,   e.g. 2026-03-25\n\n2. Run the requests in order, or use the Collection Runner to run all at once.\n\n## Resources\n- GraphQL API Explorer: https://graphql.cloudflare.com/explorer\n- DNS Analytics docs:   https://developers.cloudflare.com/dns/additional-options/analytics/",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{CF_API_TOKEN}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "CF_REST_BASE",  "value": "https://api.cloudflare.com/client/v4" },
+    { "key": "CF_GRAPHQL",    "value": "https://api.cloudflare.com/client/v4/graphql" }
+  ],
+  "item": [
+    {
+      "name": "1. Zone Info",
+      "item": [
+        {
+          "name": "Get Zone Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{CF_REST_BASE}}/zones/{{CF_ZONE_ID}}",
+              "host": ["{{CF_REST_BASE}}"],
+              "path": ["zones", "{{CF_ZONE_ID}}"]
+            },
+            "description": "Fetch zone metadata: name, status, nameservers, plan, etc."
+          }
+        },
+        {
+          "name": "List All Zones (Account)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{CF_REST_BASE}}/zones?account.id={{CF_ACCOUNT_ID}}&per_page=50",
+              "host": ["{{CF_REST_BASE}}"],
+              "path": ["zones"],
+              "query": [
+                { "key": "account.id", "value": "{{CF_ACCOUNT_ID}}" },
+                { "key": "per_page",   "value": "50" }
+              ]
+            },
+            "description": "List all zones in your account. Use zone IDs from this response in accounts.json."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. DNS Records",
+      "item": [
+        {
+          "name": "List DNS Records",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{CF_REST_BASE}}/zones/{{CF_ZONE_ID}}/dns_records?per_page=100&order=type",
+              "host": ["{{CF_REST_BASE}}"],
+              "path": ["zones", "{{CF_ZONE_ID}}", "dns_records"],
+              "query": [
+                { "key": "per_page", "value": "100" },
+                { "key": "order",    "value": "type" }
+              ]
+            },
+            "description": "Fetch all DNS records for the zone. Used in the DNS Records Inventory section of the report."
+          }
+        },
+        {
+          "name": "Get DNSSEC Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{CF_REST_BASE}}/zones/{{CF_ZONE_ID}}/dnssec",
+              "host": ["{{CF_REST_BASE}}"],
+              "path": ["zones", "{{CF_ZONE_ID}}", "dnssec"]
+            },
+            "description": "Fetch DNSSEC status and DS record for the zone."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. DNS Analytics (GraphQL)",
+      "item": [
+        {
+          "name": "Query Volume by Day",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query DnsVolumeByDay($zoneTag: String!, $startDate: Date!, $endDate: Date!) {\\n  viewer {\\n    zones(filter: { zoneTag: $zoneTag }) {\\n      byDate: dnsAnalyticsAdaptiveGroups(\\n        limit: 5000\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [date_ASC]\\n      ) {\\n        dimensions { date }\\n        count\\n      }\\n    }\\n  }\\n}\",\n  \"variables\": {\n    \"zoneTag\": \"{{CF_ZONE_ID}}\",\n    \"startDate\": \"{{START_DATE}}\",\n    \"endDate\": \"{{END_DATE}}\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{CF_GRAPHQL}}",
+              "host": ["{{CF_GRAPHQL}}"]
+            },
+            "description": "Time-series DNS query count per day. Uses the correct `count` field (not sum.queryCount)."
+          }
+        },
+        {
+          "name": "Cache Hit vs Miss",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query DnsCacheStatus($zoneTag: String!, $startDate: Date!, $endDate: Date!) {\\n  viewer {\\n    zones(filter: { zoneTag: $zoneTag }) {\\n      byCacheStatus: dnsAnalyticsAdaptiveGroups(\\n        limit: 5\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [count_DESC]\\n      ) {\\n        dimensions { responseCached }\\n        count\\n      }\\n    }\\n  }\\n}\",\n  \"variables\": {\n    \"zoneTag\": \"{{CF_ZONE_ID}}\",\n    \"startDate\": \"{{START_DATE}}\",\n    \"endDate\": \"{{END_DATE}}\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{CF_GRAPHQL}}",
+              "host": ["{{CF_GRAPHQL}}"]
+            },
+            "description": "Cache hit vs miss breakdown. responseCached=true means served from cache."
+          }
+        },
+        {
+          "name": "Top Queried Domain Names",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query TopDomains($zoneTag: String!, $startDate: Date!, $endDate: Date!) {\\n  viewer {\\n    zones(filter: { zoneTag: $zoneTag }) {\\n      byQueryName: dnsAnalyticsAdaptiveGroups(\\n        limit: 15\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [count_DESC]\\n      ) {\\n        dimensions { queryName }\\n        count\\n      }\\n    }\\n  }\\n}\",\n  \"variables\": {\n    \"zoneTag\": \"{{CF_ZONE_ID}}\",\n    \"startDate\": \"{{START_DATE}}\",\n    \"endDate\": \"{{END_DATE}}\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{CF_GRAPHQL}}",
+              "host": ["{{CF_GRAPHQL}}"]
+            },
+            "description": "Top 15 most-queried domain names in the period."
+          }
+        },
+        {
+          "name": "Query Type Distribution",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query QueryTypes($zoneTag: String!, $startDate: Date!, $endDate: Date!) {\\n  viewer {\\n    zones(filter: { zoneTag: $zoneTag }) {\\n      byQueryType: dnsAnalyticsAdaptiveGroups(\\n        limit: 20\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [count_DESC]\\n      ) {\\n        dimensions { queryType }\\n        count\\n      }\\n    }\\n  }\\n}\",\n  \"variables\": {\n    \"zoneTag\": \"{{CF_ZONE_ID}}\",\n    \"startDate\": \"{{START_DATE}}\",\n    \"endDate\": \"{{END_DATE}}\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{CF_GRAPHQL}}",
+              "host": ["{{CF_GRAPHQL}}"]
+            },
+            "description": "Breakdown of queries by record type (A, AAAA, MX, CNAME, TXT, etc.)"
+          }
+        },
+        {
+          "name": "Response Code Breakdown",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query ResponseCodes($zoneTag: String!, $startDate: Date!, $endDate: Date!) {\\n  viewer {\\n    zones(filter: { zoneTag: $zoneTag }) {\\n      byResponseCode: dnsAnalyticsAdaptiveGroups(\\n        limit: 20\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [count_DESC]\\n      ) {\\n        dimensions { responseCode }\\n        count\\n      }\\n    }\\n  }\\n}\",\n  \"variables\": {\n    \"zoneTag\": \"{{CF_ZONE_ID}}\",\n    \"startDate\": \"{{START_DATE}}\",\n    \"endDate\": \"{{END_DATE}}\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{CF_GRAPHQL}}",
+              "host": ["{{CF_GRAPHQL}}"]
+            },
+            "description": "DNS response code distribution: NOERROR, NXDOMAIN, SERVFAIL, REFUSED, etc."
+          }
+        },
+        {
+          "name": "Full Report Query (All in One)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query DnsFullReport($zoneTag: String!, $startDate: Date!, $endDate: Date!) {\\n  viewer {\\n    zones(filter: { zoneTag: $zoneTag }) {\\n      byDate: dnsAnalyticsAdaptiveGroups(\\n        limit: 5000\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [date_ASC]\\n      ) {\\n        dimensions { date }\\n        count\\n      }\\n      byQueryType: dnsAnalyticsAdaptiveGroups(\\n        limit: 20\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [count_DESC]\\n      ) {\\n        dimensions { queryType }\\n        count\\n      }\\n      byResponseCode: dnsAnalyticsAdaptiveGroups(\\n        limit: 20\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [count_DESC]\\n      ) {\\n        dimensions { responseCode }\\n        count\\n      }\\n      byQueryName: dnsAnalyticsAdaptiveGroups(\\n        limit: 15\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [count_DESC]\\n      ) {\\n        dimensions { queryName }\\n        count\\n      }\\n      byCacheStatus: dnsAnalyticsAdaptiveGroups(\\n        limit: 5\\n        filter: { date_geq: $startDate, date_leq: $endDate }\\n        orderBy: [count_DESC]\\n      ) {\\n        dimensions { responseCached }\\n        count\\n      }\\n    }\\n  }\\n}\",\n  \"variables\": {\n    \"zoneTag\": \"{{CF_ZONE_ID}}\",\n    \"startDate\": \"{{START_DATE}}\",\n    \"endDate\": \"{{END_DATE}}\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{CF_GRAPHQL}}",
+              "host": ["{{CF_GRAPHQL}}"]
+            },
+            "description": "The full combined GraphQL query used by the report system — all five datasets in one round-trip using aliased fields. Uses `count` (correct field) instead of the invalid `sum.queryCount`."
+          }
+        },
+        {
+          "name": "Account-Level NXDOMAIN Queries",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query AccountNXDOMAIN($accountTag: String!, $startDate: String!, $endDate: String!) {\\n  viewer {\\n    accounts(filter: { accountTag: $accountTag }) {\\n      dnsAnalyticsAdaptive(\\n        filter: {\\n          date_geq: $startDate\\n          date_leq: $endDate\\n          responseCode: \\\"NXDOMAIN\\\"\\n        }\\n        limit: 100\\n        orderBy: [datetime_DESC]\\n      ) {\\n        zoneTag\\n        queryName\\n        responseCode\\n        queryType\\n        datetime\\n      }\\n    }\\n  }\\n}\",\n  \"variables\": {\n    \"accountTag\": \"{{CF_ACCOUNT_ID}}\",\n    \"startDate\": \"{{START_DATE}}\",\n    \"endDate\": \"{{END_DATE}}\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{CF_GRAPHQL}}",
+              "host": ["{{CF_GRAPHQL}}"]
+            },
+            "description": "Account-level query: find NXDOMAIN responses across ALL zones in your account. Useful for investigating DNS errors."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. API Token Verification",
+      "item": [
+        {
+          "name": "Verify Token",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{CF_REST_BASE}}/user/tokens/verify",
+              "host": ["{{CF_REST_BASE}}"],
+              "path": ["user", "tokens", "verify"]
+            },
+            "description": "Verify that your API token is valid and check its status."
+          }
+        },
+        {
+          "name": "Token Permissions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{CF_REST_BASE}}/user/tokens",
+              "host": ["{{CF_REST_BASE}}"],
+              "path": ["user", "tokens"]
+            },
+            "description": "List all API tokens for your account (omits the actual token values)."
+          }
+        }
+      ]
+    }
+  ]
+}
