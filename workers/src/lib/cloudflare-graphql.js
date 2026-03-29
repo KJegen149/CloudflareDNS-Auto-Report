@@ -153,14 +153,6 @@ query GatewayInsights($accountTag: String!, $startDatetime: Time!, $endDatetime:
         count
         dimensions { action }
       }
-      gwTopBandwidth: gatewayL4SessionsAdaptiveGroups(
-        limit: 10
-        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
-        orderBy: [count_DESC]
-      ) {
-        sum { bytesIngress bytesEgress }
-        dimensions { email }
-      }
     }
   }
 }

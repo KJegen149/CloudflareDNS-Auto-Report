@@ -316,8 +316,7 @@ export function renderEmail({
   const gwDecisions   = gateway.gwDnsByDecision  ?? [];
   const gwTopDomains  = gateway.gwDnsTopDomains  ?? [];
   const gwHttpActions = gateway.gwHttpByAction   ?? [];
-  const gwBandwidth   = gateway.gwTopBandwidth   ?? [];
-  const hasGateway    = gwDecisions.length > 0 || gwHttpActions.length > 0 || gwBandwidth.length > 0;
+  const hasGateway    = gwDecisions.length > 0 || gwHttpActions.length > 0 || gwTopDomains.length > 0;
 
   const maxGwDec  = gwDecisions[0]?.count ?? 1;
   const gwDecBars = gwDecisions.slice(0, 8).map(r => {
@@ -577,35 +576,6 @@ export function renderEmail({
     <table width="100%" cellpadding="0" cellspacing="0">${gwActBars}</table>
   </td></tr>` : ''}
 
-  ${gwBandwidth.length ? `
-  <tr><td style="padding:0 32px 16px;">
-    <div style="font-size:11px;font-weight:700;color:#1a3a5c;text-transform:uppercase;
-                letter-spacing:.6px;border-bottom:2px solid #1a3a5c;padding-bottom:5px;margin-bottom:10px;">
-      Top Bandwidth Consumers
-    </div>
-    <div style="border:1px solid ${C.border};border-radius:4px;overflow:hidden;">
-      <table width="100%" cellpadding="0" cellspacing="0">
-        <thead><tr style="background:#1a3a5c;">
-          <th style="padding:7px 10px;text-align:left;color:#fff;font-size:10px;text-transform:uppercase;">User</th>
-          <th style="padding:7px 10px;text-align:right;color:#fff;font-size:10px;text-transform:uppercase;">Downloaded</th>
-          <th style="padding:7px 10px;text-align:right;color:#fff;font-size:10px;text-transform:uppercase;">Uploaded</th>
-          <th style="padding:7px 10px;text-align:right;color:#fff;font-size:10px;text-transform:uppercase;">Total</th>
-        </tr></thead>
-        <tbody>
-          ${gwBandwidth.map(r => {
-            const dl = r.sum?.bytesEgress  ?? 0;
-            const ul = r.sum?.bytesIngress ?? 0;
-            return `<tr style="border-bottom:1px solid ${C.border};">
-              <td style="padding:6px 10px;font-size:12px;">${r.dimensions?.email || 'Unknown'}</td>
-              <td style="padding:6px 10px;font-size:12px;text-align:right;">${humanBytes(dl)}</td>
-              <td style="padding:6px 10px;font-size:12px;text-align:right;">${humanBytes(ul)}</td>
-              <td style="padding:6px 10px;font-size:12px;text-align:right;font-weight:600;">${humanBytes(dl + ul)}</td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>
-  </td></tr>` : ''}
   ` : ''}
 
   <!-- FOOTER ──────────────────────────────────────────────────── -->
