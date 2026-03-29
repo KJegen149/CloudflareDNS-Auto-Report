@@ -426,6 +426,26 @@ ${creds.length === 0 ? '<div class="flash-error">No credentials exist yet — <a
     </div>
   </div>
 
+  <div style="margin-top:20px;background:#fdf9f9;border:1px solid ${C.border};border-radius:4px;padding:14px 16px;">
+    <div style="font-size:11px;font-weight:700;color:#4A1E24;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px;">Report Sections</div>
+    <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin-bottom:8px;">
+      <input type="checkbox" name="report_dns" value="1" ${!rep || rep.report_dns !== 0 ? 'checked' : ''}
+             style="margin-top:2px;width:auto;">
+      <span>
+        <strong style="font-size:12px;">DNS Analytics</strong>
+        <span style="font-size:11px;color:#888;display:block;">Query volume, top domains, connection success rate, DNSSEC status, and DNS configuration summary.</span>
+      </span>
+    </label>
+    <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
+      <input type="checkbox" name="report_ztna" value="1" ${!rep || rep.report_ztna !== 0 ? 'checked' : ''}
+             style="margin-top:2px;width:auto;">
+      <span>
+        <strong style="font-size:12px;">Gateway / ZTNA</strong>
+        <span style="font-size:11px;color:#888;display:block;">Cloudflare Gateway DNS filtering, proxy actions, and bandwidth. Requires <code>Account Analytics: Read</code> on the API token.</span>
+      </span>
+    </label>
+  </div>
+
   <div style="margin-top:22px;display:flex;gap:12px">
     <button class="btn btn-primary">${id ? 'Save Changes' : 'Create Report'}</button>
     <a class="btn btn-secondary" href="/admin/reports">Cancel</a>
@@ -528,6 +548,8 @@ function extractReportForm(form) {
   const reportTitle  = form.get('report_title')?.trim()   || 'DNS Report';
   const startDate    = form.get('start_date')?.trim()     || new Date().toISOString().slice(0, 10);
   const endDate      = form.get('end_date')?.trim()       || null;
+  const reportDns    = form.get('report_dns')  === '1' ? 1 : 0;
+  const reportZtna   = form.get('report_ztna') === '1' ? 1 : 0;
   const recipients   = (form.get('recipients') ?? '')
     .split(/[\n,]+/).map(e => e.trim()).filter(Boolean);
 
@@ -535,7 +557,8 @@ function extractReportForm(form) {
     return { ok: false, error: 'All required fields must be filled in.' };
 
   return { ok: true, values: { label, credentialId, zoneId, zoneName, frequency,
-    recipients: JSON.stringify(recipients), subjectPfx, reportTitle, startDate, endDate } };
+    recipients: JSON.stringify(recipients), subjectPfx, reportTitle, startDate, endDate,
+    reportDns, reportZtna } };
 }
 
 async function createReport(request, env) {
@@ -545,10 +568,11 @@ async function createReport(request, env) {
   const v = d.values;
   await env.DB.prepare(`
     INSERT INTO report_configs
-      (credential_id,label,zone_id,zone_name,frequency,recipients,start_date,end_date,subject_prefix,report_title)
-    VALUES (?,?,?,?,?,?,?,?,?,?)
+      (credential_id,label,zone_id,zone_name,frequency,recipients,start_date,end_date,subject_prefix,report_title,report_dns,report_ztna)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
   `).bind(v.credentialId,v.label,v.zoneId,v.zoneName,v.frequency,
-          v.recipients,v.startDate,v.endDate,v.subjectPfx,v.reportTitle).run();
+          v.recipients,v.startDate,v.endDate,v.subjectPfx,v.reportTitle,
+          v.reportDns,v.reportZtna).run();
   return redirect('/admin/reports');
 }
 
@@ -560,10 +584,12 @@ async function updateReport(request, env, id) {
   await env.DB.prepare(`
     UPDATE report_configs
     SET credential_id=?,label=?,zone_id=?,zone_name=?,frequency=?,recipients=?,
-        start_date=?,end_date=?,subject_prefix=?,report_title=?,updated_at=datetime('now')
+        start_date=?,end_date=?,subject_prefix=?,report_title=?,
+        report_dns=?,report_ztna=?,updated_at=datetime('now')
     WHERE id=?
   `).bind(v.credentialId,v.label,v.zoneId,v.zoneName,v.frequency,
-          v.recipients,v.startDate,v.endDate,v.subjectPfx,v.reportTitle,id).run();
+          v.recipients,v.startDate,v.endDate,v.subjectPfx,v.reportTitle,
+          v.reportDns,v.reportZtna,id).run();
   return redirect('/admin/reports');
 }
 

@@ -61,10 +61,14 @@ async function _processOne(config, frequency, env) {
   }
 
   // ── Collect all report data ────────────────────────────────────────────────
+  const reportDns  = config.report_dns  !== 0;
+  const reportZtna = config.report_ztna !== 0;
+
   const client = new CloudflareClient(apiToken);
   let reportData;
   try {
-    reportData = await client.collectReportData(config.zone_id, frequency);
+    reportData = await client.collectReportData(config.zone_id, frequency, null,
+      { dns: reportDns, ztna: reportZtna });
   } catch (err) {
     console.error(`[${label}] Data collection failed: ${err.message}`);
     await _recordRun(env, config.id, config.zone_name, frequency, '?', '?', 'failed',
@@ -86,8 +90,10 @@ async function _processOne(config, frequency, env) {
     dnsRecords:   reportData.dnsRecords,
     dnssec:       reportData.dnssec,
     httpSecurity: reportData.http_security  ?? {},
-    aiTraffic:    reportData.ai_traffic     ?? [],
+    aiTraffic:    reportData.ai_traffic     ?? {},
     gateway:      reportData.gateway        ?? {},
+    reportDns,
+    reportZtna,
     generatedAt,
   });
 
