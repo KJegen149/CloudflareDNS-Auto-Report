@@ -408,10 +408,17 @@ export class CloudflareClient {
           },
         }),
       });
-      if (!resp.ok) return {};
+      if (!resp.ok) {
+        console.warn(`getGatewayData HTTP error: ${resp.status} for account ${accountId}`);
+        return {};
+      }
       const result = await resp.json();
-      if (result.errors?.length) return {};
+      if (result.errors?.length) {
+        console.warn(`getGatewayData GraphQL errors for account ${accountId}: ${JSON.stringify(result.errors.slice(0, 2))}`);
+        return {};
+      }
       const accounts = result?.data?.viewer?.accounts ?? [];
+      console.log(`getGatewayData: ${accounts.length} account(s) returned for ${accountId}, keys: ${JSON.stringify(Object.keys(accounts[0] ?? {}))}`);
       return accounts[0] ?? {};
     } catch (err) {
       console.warn(`getGatewayData error: ${err.message}`);

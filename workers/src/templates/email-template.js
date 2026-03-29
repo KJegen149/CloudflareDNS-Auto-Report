@@ -404,6 +404,7 @@ export function renderEmail({
     </td>
   </tr>
 
+  ${reportDns ? `
   <!-- SUMMARY CARDS ────────────────────────────────────────────── -->
   <tr>
     <td style="background:${C.bgLight};padding:18px 32px;border-bottom:1px solid ${C.border};">
@@ -427,7 +428,7 @@ export function renderEmail({
         Traffic, performance, and security for ${zoneName}
       </span>
     </td>
-  </tr>
+  </tr>` : ''}
 
   ${reportDns && byDate.length ? `
   <!-- QUERY VOLUME BY DAY ─────────────────────────────────────── -->
@@ -445,7 +446,7 @@ export function renderEmail({
     <table width="100%" cellpadding="0" cellspacing="0">${domainBars}</table>
   </td></tr>` : ''}
 
-  ${countryChart ? `
+  ${reportDns && countryChart ? `
   <!-- TRAFFIC BY COUNTRY ──────────────────────────────────────── -->
   ${sectionTitle('Web Traffic by Country')}
   <tr><td style="padding:0 32px 16px;">
@@ -473,14 +474,14 @@ export function renderEmail({
   </td></tr>
   <tr><td style="padding:0 32px 12px;"></td></tr>` : ''}
 
-  ${secBars ? `
+  ${reportDns && secBars ? `
   <!-- SECURITY EVENTS ─────────────────────────────────────────── -->
   ${sectionTitle('Security Events')}
   <tr><td style="padding:0 32px 16px;">
     <table width="100%" cellpadding="0" cellspacing="0">${secBars}</table>
   </td></tr>` : ''}
 
-  ${(aiBars || aiDayBars) ? `
+  ${reportDns && (aiBars || aiDayBars) ? `
   <!-- AI CRAWLER ACTIVITY ─────────────────────────────────────── -->
   ${sectionTitle('AI Crawler Activity')}
   <tr><td style="padding:0 32px 6px;">
