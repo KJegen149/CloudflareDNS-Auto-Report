@@ -426,7 +426,7 @@ ${creds.length === 0 ? '<div class="flash-error">No credentials exist yet — <a
     </div>
   </div>
 
-  <div style="margin-top:20px;background:#fdf9f9;border:1px solid ${C.border};border-radius:4px;padding:14px 16px;">
+  <div style="margin-top:20px;background:#fdf9f9;border:1px solid #e5d7d9;border-radius:4px;padding:14px 16px;">
     <div style="font-size:11px;font-weight:700;color:#4A1E24;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px;">Report Sections</div>
     <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin-bottom:8px;">
       <input type="checkbox" name="report_dns" value="1" ${!rep || rep.report_dns !== 0 ? 'checked' : ''}
