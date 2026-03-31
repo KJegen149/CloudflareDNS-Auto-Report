@@ -161,11 +161,14 @@ query GatewayInsights($accountTag: String!, $startDatetime: Time!, $endDatetime:
 /**
  * Secondary Gateway query for per-user breakdowns.
  * Kept separate so a schema error here cannot break the core gateway data.
- * The dimension name for user identity in Cloudflare Gateway analytics is
- * "userEmail" per the GraphQL schema — if this query fails it is silently
- * ignored and user sections are simply omitted from the report.
+ * Try the most likely dimension name candidates in order; whichever one
+ * works first is used. The correct name is discovered via introspection
+ * and cached in GW_USER_DIM at module load time (best-effort).
  */
-const GATEWAY_USERS_QUERY = `
+const GW_USER_DIM_CANDIDATES = ['userIdentity', 'email', 'userEmail', 'userId'];
+
+function buildGatewayUsersQuery(dim) {
+  return `
 query GatewayUsers($accountTag: String!, $startDatetime: Time!, $endDatetime: Time!) {
   viewer {
     accounts(filter: { accountTag: $accountTag }) {
@@ -175,7 +178,7 @@ query GatewayUsers($accountTag: String!, $startDatetime: Time!, $endDatetime: Ti
         orderBy: [count_DESC]
       ) {
         count
-        dimensions { userEmail }
+        dimensions { ${dim} }
       }
       gwHttpTopUsers: gatewayL7RequestsAdaptiveGroups(
         limit: 10
@@ -183,12 +186,23 @@ query GatewayUsers($accountTag: String!, $startDatetime: Time!, $endDatetime: Ti
         orderBy: [count_DESC]
       ) {
         count
-        dimensions { userEmail }
+        dimensions { ${dim} }
       }
     }
   }
+}`;
 }
-`;
+
+/** GraphQL introspection query to discover dimension fields for gateway datasets. */
+const GATEWAY_INTROSPECT_QUERY = `
+query {
+  __type(name: "GatewayResolverQueriesAdaptiveGroupsDimension") {
+    fields { name }
+  }
+  __typeL7: __type(name: "GatewayL7RequestsAdaptiveGroupsDimension") {
+    fields { name }
+  }
+}`;
 
 /** Known AI crawlers detected by user-agent substring. Available on all plans. */
 const AI_BOTS = [
@@ -449,25 +463,51 @@ export class CloudflareClient {
       return {};
     }
 
-    // ── User query (may fail if dimension name differs on this plan/tier) ─────
+    // ── User query — try each candidate dimension name until one works ────────
     let userData = {};
-    try {
-      const resp = await fetch(GRAPHQL_ENDPOINT, {
-        method: 'POST',
-        headers: this.headers,
-        body: JSON.stringify({ query: GATEWAY_USERS_QUERY, variables: vars }),
-      });
-      if (resp.ok) {
+    let foundDim = null;
+    for (const dim of GW_USER_DIM_CANDIDATES) {
+      try {
+        const resp = await fetch(GRAPHQL_ENDPOINT, {
+          method: 'POST',
+          headers: this.headers,
+          body: JSON.stringify({ query: buildGatewayUsersQuery(dim), variables: vars }),
+        });
+        if (!resp.ok) break;
         const result = await resp.json();
         if (!result.errors?.length) {
           userData = result?.data?.viewer?.accounts?.[0] ?? {};
-          console.log(`getGatewayData users: keys=${JSON.stringify(Object.keys(userData))}`);
-        } else {
-          console.warn(`getGatewayData user query errors: ${JSON.stringify(result.errors.slice(0, 2))}`);
+          foundDim = dim;
+          console.log(`getGatewayData users: dim=${dim} keys=${JSON.stringify(Object.keys(userData))}`);
+          break;
         }
+        // Wrong field name — log and try next candidate
+        const msg = result.errors?.[0]?.message ?? 'unknown error';
+        console.warn(`getGatewayData user query dim=${dim} failed: ${msg}`);
+      } catch (err) {
+        console.warn(`getGatewayData user query dim=${dim} error: ${err.message}`);
+        break;
       }
-    } catch (err) {
-      console.warn(`getGatewayData user query error: ${err.message}`);
+    }
+    if (!foundDim) {
+      // All candidates exhausted — run introspection so we can identify the right field
+      try {
+        const iResp = await fetch(GRAPHQL_ENDPOINT, {
+          method: 'POST', headers: this.headers,
+          body: JSON.stringify({ query: GATEWAY_INTROSPECT_QUERY }),
+        });
+        if (iResp.ok) {
+          const iResult = await iResp.json();
+          const dnsFields  = (iResult?.data?.__type?.fields ?? []).map(f => f.name);
+          const httpFields = (iResult?.data?.__typeL7?.fields ?? []).map(f => f.name);
+          console.log(`GW introspect DNS dims: ${JSON.stringify(dnsFields)}`);
+          console.log(`GW introspect HTTP dims: ${JSON.stringify(httpFields)}`);
+        }
+      } catch (_) {}
+    }
+    // Store working dim name on class so email template can access right key
+    if (foundDim) {
+      userData.gwUserDimKey = foundDim;
     }
 
     return { ...coreData, ...userData };

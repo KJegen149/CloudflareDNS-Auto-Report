@@ -364,18 +364,23 @@ export function renderEmail({
     return barRow(domain, r.count, maxGwDom, C.purple);
   }).join('');
 
+  // The correct dimension key is discovered at runtime; fall back through known names
+  const dimKey = gateway.gwUserDimKey ?? 'userIdentity';
+
   // Top users by DNS queries
   const maxGwDnsUser  = gwDnsUsers[0]?.count ?? 1;
   const gwDnsUserBars = gwDnsUsers.slice(0, 10).map(r => {
-    const email = String(r.dimensions.userEmail ?? 'Unknown');
-    return barRow(email, r.count, maxGwDnsUser, C.blue);
+    const label = String(r.dimensions[dimKey] ?? r.dimensions.userIdentity
+                        ?? r.dimensions.userEmail ?? r.dimensions.email ?? 'Unknown');
+    return barRow(label, r.count, maxGwDnsUser, C.blue);
   }).join('');
 
   // Top users by HTTP requests
   const maxGwHttpUser  = gwHttpUsers[0]?.count ?? 1;
   const gwHttpUserBars = gwHttpUsers.slice(0, 10).map(r => {
-    const email = String(r.dimensions.userEmail ?? 'Unknown');
-    return barRow(email, r.count, maxGwHttpUser, C.purple);
+    const label = String(r.dimensions[dimKey] ?? r.dimensions.userIdentity
+                        ?? r.dimensions.userEmail ?? r.dimensions.email ?? 'Unknown');
+    return barRow(label, r.count, maxGwHttpUser, C.purple);
   }).join('');
 
   // ── DNS config summary ─────────────────────────────────────────────────────
