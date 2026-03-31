@@ -153,6 +153,22 @@ query GatewayInsights($accountTag: String!, $startDatetime: Time!, $endDatetime:
         count
         dimensions { action }
       }
+    }
+  }
+}
+`;
+
+/**
+ * Secondary Gateway query for per-user breakdowns.
+ * Kept separate so a schema error here cannot break the core gateway data.
+ * The dimension name for user identity in Cloudflare Gateway analytics is
+ * "userEmail" per the GraphQL schema — if this query fails it is silently
+ * ignored and user sections are simply omitted from the report.
+ */
+const GATEWAY_USERS_QUERY = `
+query GatewayUsers($accountTag: String!, $startDatetime: Time!, $endDatetime: Time!) {
+  viewer {
+    accounts(filter: { accountTag: $accountTag }) {
       gwDnsTopUsers: gatewayResolverQueriesAdaptiveGroups(
         limit: 10
         filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
@@ -403,18 +419,19 @@ export class CloudflareClient {
    */
   async getGatewayData(accountId, startDate, endDate) {
     if (!accountId) return {};
+    const vars = {
+      accountTag:    accountId,
+      startDatetime: `${startDate}T00:00:00Z`,
+      endDatetime:   `${endDate}T23:59:59Z`,
+    };
+
+    // ── Core query (known-good fields) ────────────────────────────────────────
+    let coreData = {};
     try {
       const resp = await fetch(GRAPHQL_ENDPOINT, {
         method: 'POST',
         headers: this.headers,
-        body: JSON.stringify({
-          query: GATEWAY_QUERY,
-          variables: {
-            accountTag:    accountId,
-            startDatetime: `${startDate}T00:00:00Z`,
-            endDatetime:   `${endDate}T23:59:59Z`,
-          },
-        }),
+        body: JSON.stringify({ query: GATEWAY_QUERY, variables: vars }),
       });
       if (!resp.ok) {
         console.warn(`getGatewayData HTTP error: ${resp.status} for account ${accountId}`);
@@ -422,12 +439,38 @@ export class CloudflareClient {
       }
       const result = await resp.json();
       if (result.errors?.length) {
-        console.warn(`getGatewayData GraphQL errors for account ${accountId}: ${JSON.stringify(result.errors.slice(0, 2))}`);
-        // Fall through — GraphQL may still return partial data alongside errors
+        console.warn(`getGatewayData GraphQL errors: ${JSON.stringify(result.errors.slice(0, 2))}`);
       }
       const accounts = result?.data?.viewer?.accounts ?? [];
-      console.log(`getGatewayData: ${accounts.length} account(s) for ${accountId}, keys: ${JSON.stringify(Object.keys(accounts[0] ?? {}))}`);
-      return accounts[0] ?? {};
+      coreData = accounts[0] ?? {};
+      console.log(`getGatewayData core: keys=${JSON.stringify(Object.keys(coreData))}`);
+    } catch (err) {
+      console.warn(`getGatewayData core error: ${err.message}`);
+      return {};
+    }
+
+    // ── User query (may fail if dimension name differs on this plan/tier) ─────
+    let userData = {};
+    try {
+      const resp = await fetch(GRAPHQL_ENDPOINT, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({ query: GATEWAY_USERS_QUERY, variables: vars }),
+      });
+      if (resp.ok) {
+        const result = await resp.json();
+        if (!result.errors?.length) {
+          userData = result?.data?.viewer?.accounts?.[0] ?? {};
+          console.log(`getGatewayData users: keys=${JSON.stringify(Object.keys(userData))}`);
+        } else {
+          console.warn(`getGatewayData user query errors: ${JSON.stringify(result.errors.slice(0, 2))}`);
+        }
+      }
+    } catch (err) {
+      console.warn(`getGatewayData user query error: ${err.message}`);
+    }
+
+    return { ...coreData, ...userData };
     } catch (err) {
       console.warn(`getGatewayData error: ${err.message}`);
       return {};
