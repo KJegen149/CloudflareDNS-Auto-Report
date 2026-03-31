@@ -60,100 +60,156 @@ function esc(s) {
 // ── Inline CSS (no external assets) ──────────────────────────────────────────
 
 const CSS = `
+/* ── FCS brand tokens ─────────────────────────────────────── */
 :root{
-  --bg:#f0eced;--surface:#fff;--surface2:#fdf9f9;
-  --border:#ede0e1;--border2:#d5c2c5;
-  --text:#1a1a1a;--text-muted:#999;--text-label:#4A1E24;
-  --brand:#722F37;--brand-dark:#4A1E24;
-  --nav-bg:#722F37;--nav-link:rgba(255,255,255,.75);--nav-link-active:#fff;
-  --th-bg:#722F37;--th-text:#fff;
-  --stat-border:#722F37;--stat-val:#722F37;
-  --code-bg:#f4eef0;
-  --btn-sec-bg:#e5d7d9;--btn-sec-text:#4A1E24;--btn-sec-border:#d5c2c5;
-  --btn-sec-hover:#d5c2c5;
-  --flash-err-bg:#fce8e8;--flash-err-border:#f5c6cb;--flash-err-text:#7b1c1c;
-  --badge-green-bg:#d1f0de;--badge-green-text:#1a5c32;
-  --badge-red-bg:#fce8e8;--badge-red-text:#7b1c1c;
+  --bg:#f2f2f2;--surface:#fff;--surface2:#f8f8f8;
+  --border:#e2e2e2;--border2:#c8c8c8;
+  --text:#1c1c1c;--text-muted:#888;--text-label:#333;
+  --brand:#7B1535;--brand-dark:#5a0f27;--brand-light:#f5e8ec;
+  --topbar-bg:#111;--topbar-text:#bbb;
+  --nav-bg:#fff;--nav-border:#7B1535;
+  --nav-link:#444;--nav-link-active:#7B1535;
+  --th-bg:#7B1535;--th-text:#fff;
+  --stat-border:#7B1535;--stat-val:#7B1535;
+  --code-bg:#f7f0f2;
+  --btn-sec-bg:transparent;--btn-sec-text:#7B1535;--btn-sec-border:#7B1535;
+  --btn-sec-hover-bg:#7B1535;--btn-sec-hover-text:#fff;
+  --flash-err-bg:#fce8ec;--flash-err-border:#f5bcc8;--flash-err-text:#7B1535;
+  --badge-green-bg:#d4f0e0;--badge-green-text:#1a5c32;
+  --badge-red-bg:#fce8ec;--badge-red-text:#7B1535;
   --badge-amber-bg:#fef3d0;--badge-amber-text:#7a4a00;
   --badge-gray-bg:#eee;--badge-gray-text:#555;
   --badge-blue-bg:#ddeeff;--badge-blue-text:#1a3d6e;
-  --toggle-bg:rgba(255,255,255,.18);--toggle-hover:rgba(255,255,255,.28);
+  --toggle-bg:#e8e8e8;--toggle-hover:#d8d8d8;--toggle-color:#444;
+  --shadow:0 1px 4px rgba(0,0,0,.10);
 }
 [data-theme=dark]{
-  --bg:#1a1518;--surface:#251e22;--surface2:#2e252a;
-  --border:#3a2d31;--border2:#4a3840;
-  --text:#e8dfe1;--text-muted:#7a6a6e;--text-label:#d4a8ae;
-  --brand:#c97880;--brand-dark:#e8a0a8;
-  --nav-bg:#1e1518;--nav-link:rgba(255,255,255,.55);--nav-link-active:rgba(255,255,255,.9);
-  --th-bg:#2e1f23;--th-text:#e8dfe1;
-  --stat-border:#c97880;--stat-val:#c97880;
-  --code-bg:#2e1f23;
-  --btn-sec-bg:#3a2d31;--btn-sec-text:#d4a8ae;--btn-sec-border:#4a3840;
-  --btn-sec-hover:#4a3840;
-  --flash-err-bg:#3b1a1a;--flash-err-border:#6b2a2a;--flash-err-text:#f0a0a0;
+  --bg:#161213;--surface:#201a1c;--surface2:#2a2224;
+  --border:#352830;--border2:#46333b;
+  --text:#e8e0e2;--text-muted:#7a6a70;--text-label:#d4aab2;
+  --brand:#d4758a;--brand-dark:#e8a0b0;--brand-light:#2e1820;
+  --topbar-bg:#0a0809;--topbar-text:#666;
+  --nav-bg:#1a1315;--nav-border:#7B1535;
+  --nav-link:rgba(232,224,226,.6);--nav-link-active:#d4758a;
+  --th-bg:#2e1520;--th-text:#e8e0e2;
+  --stat-border:#d4758a;--stat-val:#d4758a;
+  --code-bg:#2e1520;
+  --btn-sec-bg:transparent;--btn-sec-text:#d4758a;--btn-sec-border:#d4758a;
+  --btn-sec-hover-bg:#d4758a;--btn-sec-hover-text:#161213;
+  --flash-err-bg:#2e1218;--flash-err-border:#6b2232;--flash-err-text:#f0a0b0;
   --badge-green-bg:#0d2e1a;--badge-green-text:#6ee09a;
-  --badge-red-bg:#2e0d0d;--badge-red-text:#f08080;
+  --badge-red-bg:#2e0d14;--badge-red-text:#f08090;
   --badge-amber-bg:#2e1e00;--badge-amber-text:#f0c060;
-  --badge-gray-bg:#2a2a2a;--badge-gray-text:#aaa;
+  --badge-gray-bg:#252525;--badge-gray-text:#aaa;
   --badge-blue-bg:#0d1e35;--badge-blue-text:#80b8f0;
-  --toggle-bg:rgba(255,255,255,.1);--toggle-hover:rgba(255,255,255,.18);
+  --toggle-bg:#2a2224;--toggle-hover:#352830;--toggle-color:#d4758a;
+  --shadow:0 1px 6px rgba(0,0,0,.35);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;
-     background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;transition:background .2s,color .2s}
+     background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;
+     transition:background .2s,color .2s}
 a{color:var(--brand);text-decoration:none}a:hover{text-decoration:underline}
-nav{background:var(--nav-bg);padding:12px 28px;display:flex;align-items:center;gap:4px}
-nav .brand{color:#fff;font-weight:700;font-size:16px;margin-right:20px;letter-spacing:.3px}
-nav a{color:var(--nav-link);font-size:13px;padding:5px 12px;border-radius:4px}
-nav a:hover,nav a.active{color:var(--nav-link-active);background:rgba(255,255,255,.15);text-decoration:none}
+
+/* ── Top info bar (FCS tagline strip) ────────────────────── */
+.topbar{background:var(--topbar-bg);padding:5px 28px;
+        display:flex;align-items:center;justify-content:space-between}
+.topbar-brand{font-size:11px;font-weight:700;color:var(--brand);
+              letter-spacing:.3px;text-transform:uppercase}
+.topbar-tag{font-size:11px;color:var(--topbar-text);letter-spacing:.2px}
+
+/* ── Main nav ─────────────────────────────────────────────── */
+nav{background:var(--nav-bg);padding:0 28px;
+    display:flex;align-items:stretch;gap:0;
+    border-bottom:3px solid var(--nav-border);
+    box-shadow:0 2px 6px rgba(0,0,0,.08)}
+nav .brand{display:flex;align-items:center;gap:8px;
+           font-size:17px;font-weight:800;color:var(--brand);
+           padding:14px 24px 14px 0;margin-right:8px;
+           border-right:1px solid var(--border);letter-spacing:-.2px}
+nav .brand-sub{font-size:11px;font-weight:400;color:var(--text-muted);
+               letter-spacing:.3px;text-transform:uppercase}
+nav a{color:var(--nav-link);font-size:13px;font-weight:500;
+      padding:0 14px;display:flex;align-items:center;
+      border-bottom:3px solid transparent;margin-bottom:-3px;
+      transition:color .15s,border-color .15s;text-decoration:none}
+nav a:hover{color:var(--brand);text-decoration:none}
+nav a.active{color:var(--nav-link-active);border-bottom-color:var(--brand)}
 nav .spacer{flex:1}
 .theme-toggle{background:var(--toggle-bg);border:none;cursor:pointer;
-  color:rgba(255,255,255,.8);font-size:15px;width:30px;height:30px;
+  color:var(--toggle-color);font-size:14px;width:30px;height:30px;
   border-radius:50%;display:flex;align-items:center;justify-content:center;
-  transition:background .15s;padding:0;line-height:1}
-.theme-toggle:hover{background:var(--toggle-hover);color:#fff}
-.wrap{max-width:980px;margin:28px auto;padding:0 16px}
-h1{font-size:20px;font-weight:700;color:var(--brand);margin-bottom:20px}
-.card{background:var(--surface);border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.12);
+  align-self:center;transition:background .15s;padding:0;line-height:1;margin-left:8px}
+.theme-toggle:hover{background:var(--toggle-hover)}
+
+/* ── Page content ─────────────────────────────────────────── */
+.wrap{max-width:980px;margin:28px auto;padding:0 20px}
+h1{font-size:20px;font-weight:700;color:var(--brand);margin-bottom:6px;
+   padding-bottom:10px;border-bottom:2px solid var(--brand)}
+.page-gap{margin-bottom:22px}
+.card{background:var(--surface);border-radius:4px;
+      box-shadow:var(--shadow);border:1px solid var(--border);
       padding:22px 24px;margin-bottom:20px}
+
+/* ── Stats ────────────────────────────────────────────────── */
 .stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px}
-.stat{background:var(--surface);border-left:4px solid var(--stat-border);border-radius:4px;padding:14px 18px;
-      box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.stat{background:var(--surface);border-top:3px solid var(--stat-border);border-radius:4px;
+      padding:16px 18px;box-shadow:var(--shadow);border:1px solid var(--border);
+      border-top:3px solid var(--stat-border)}
 .stat-val{font-size:28px;font-weight:700;color:var(--stat-val);line-height:1}
-.stat-lbl{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-top:5px}
+.stat-lbl{font-size:10px;color:var(--text-muted);text-transform:uppercase;
+          letter-spacing:.6px;margin-top:5px}
+
+/* ── Tables ───────────────────────────────────────────────── */
 table{width:100%;border-collapse:collapse}
-th{background:var(--th-bg);color:var(--th-text);padding:8px 12px;text-align:left;
-   font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600}
-td{padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
+th{background:var(--th-bg);color:var(--th-text);padding:9px 12px;text-align:left;
+   font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+td{padding:9px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
 tr:last-child td{border-bottom:none}
 tr:nth-child(even) td{background:var(--surface2)}
-.btn{display:inline-block;padding:6px 14px;border-radius:4px;font-size:12px;font-weight:600;
-     border:none;cursor:pointer;text-decoration:none;line-height:1.4}
-.btn-primary{background:var(--brand);color:#fff}.btn-primary:hover{background:var(--brand-dark);color:#fff;text-decoration:none}
-.btn-danger{background:#C0392B;color:#fff}.btn-danger:hover{background:#922b21;color:#fff;text-decoration:none}
-.btn-secondary{background:var(--btn-sec-bg);color:var(--btn-sec-text);border:1px solid var(--btn-sec-border)}
-.btn-secondary:hover{background:var(--btn-sec-hover);color:var(--btn-sec-text);text-decoration:none}
-.btn-sm{padding:3px 10px;font-size:11px}
-.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600}
+
+/* ── Buttons ──────────────────────────────────────────────── */
+.btn{display:inline-block;padding:7px 16px;border-radius:3px;font-size:12px;
+     font-weight:700;letter-spacing:.4px;text-transform:uppercase;
+     cursor:pointer;text-decoration:none;line-height:1.4;transition:background .15s,color .15s}
+.btn-primary{background:var(--brand);color:#fff;border:2px solid var(--brand)}
+.btn-primary:hover{background:var(--brand-dark);border-color:var(--brand-dark);color:#fff;text-decoration:none}
+.btn-danger{background:#C0392B;color:#fff;border:2px solid #C0392B}
+.btn-danger:hover{background:#922b21;border-color:#922b21;color:#fff;text-decoration:none}
+.btn-secondary{background:var(--btn-sec-bg);color:var(--btn-sec-text);
+               border:2px solid var(--btn-sec-border)}
+.btn-secondary:hover{background:var(--btn-sec-hover-bg);color:var(--btn-sec-hover-text);
+                     border-color:var(--btn-sec-hover-bg);text-decoration:none}
+.btn-sm{padding:3px 10px;font-size:11px;letter-spacing:.3px}
+
+/* ── Badges ───────────────────────────────────────────────── */
+.badge{display:inline-block;padding:2px 8px;border-radius:2px;font-size:10px;
+       font-weight:700;letter-spacing:.3px;text-transform:uppercase}
 .badge-green{background:var(--badge-green-bg);color:var(--badge-green-text)}
 .badge-red{background:var(--badge-red-bg);color:var(--badge-red-text)}
 .badge-amber{background:var(--badge-amber-bg);color:var(--badge-amber-text)}
 .badge-gray{background:var(--badge-gray-bg);color:var(--badge-gray-text)}
 .badge-blue{background:var(--badge-blue-bg);color:var(--badge-blue-text)}
-form label{display:block;font-size:12px;font-weight:600;color:var(--text-label);margin-bottom:4px;margin-top:16px}
+
+/* ── Forms ────────────────────────────────────────────────── */
+form label{display:block;font-size:12px;font-weight:600;color:var(--text-label);
+           margin-bottom:4px;margin-top:16px;text-transform:uppercase;letter-spacing:.3px}
 form label:first-of-type{margin-top:0}
 form input[type=text],form input[type=email],form input[type=password],
 form input[type=date],form select,form textarea{
-  width:100%;padding:8px 11px;border:1px solid var(--border2);border-radius:4px;
+  width:100%;padding:8px 11px;border:1px solid var(--border2);border-radius:3px;
   font-size:13px;background:var(--surface);color:var(--text)}
 form input:focus,form select:focus,form textarea:focus{
-  outline:none;border-color:var(--brand);box-shadow:0 0 0 2px rgba(114,47,55,.15)}
+  outline:none;border-color:var(--brand);box-shadow:0 0 0 2px rgba(123,21,53,.12)}
 form textarea{min-height:80px;resize:vertical;font-family:inherit}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .hint{font-size:11px;color:var(--text-muted);margin-top:3px;margin-bottom:0}
+
+/* ── Misc ─────────────────────────────────────────────────── */
 .actions{display:flex;gap:6px;align-items:center;white-space:nowrap}
-.flash-error{background:var(--flash-err-bg);border:1px solid var(--flash-err-border);color:var(--flash-err-text);
-             padding:10px 14px;border-radius:4px;margin-bottom:16px;font-size:13px}
+.flash-error{background:var(--flash-err-bg);border:1px solid var(--flash-err-border);
+             color:var(--flash-err-text);padding:10px 14px;border-radius:3px;
+             margin-bottom:16px;font-size:13px}
 .empty-row td{color:var(--text-muted);text-align:center;padding:22px;font-style:italic}
 code{font-family:monospace;font-size:12px;background:var(--code-bg);padding:1px 5px;border-radius:3px}
 `;
@@ -163,15 +219,21 @@ function layout(title, body, activePath = '') {
     `<a href="${href}" class="${activePath.startsWith(href) && href !== '/admin' || activePath === href ? 'active' : ''}">${label}</a>`;
   return `<!DOCTYPE html><html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(title)} — DNS Report Admin</title>
+<title>${esc(title)} — FCS DNS Reports</title>
 <style>${CSS}</style>
 <script>
   (function(){var t=localStorage.getItem('theme');if(t)document.documentElement.setAttribute('data-theme',t);})();
 </script>
 </head>
 <body>
+<div class="topbar">
+  <span class="topbar-brand">FCS &mdash; Ferguson Computer Services</span>
+  <span class="topbar-tag">Your Trusted Technology Partner Since 1989</span>
+</div>
 <nav>
-  <span class="brand">&#9889; DNS Reports</span>
+  <span class="brand">
+    FCS <span class="brand-sub">DNS&nbsp;Reports</span>
+  </span>
   ${navLink('/admin', 'Dashboard')}
   ${navLink('/admin/credentials', 'Credentials')}
   ${navLink('/admin/reports', 'Reports')}
@@ -181,6 +243,7 @@ function layout(title, body, activePath = '') {
 </nav>
 <div class="wrap">
   <h1>${esc(title)}</h1>
+  <div class="page-gap"></div>
   ${body}
 </div>
 <script>
