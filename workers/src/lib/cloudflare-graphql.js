@@ -153,6 +153,22 @@ query GatewayInsights($accountTag: String!, $startDatetime: Time!, $endDatetime:
         count
         dimensions { action }
       }
+      gwDnsTopUsers: gatewayResolverQueriesAdaptiveGroups(
+        limit: 10
+        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
+        orderBy: [count_DESC]
+      ) {
+        count
+        dimensions { userEmail }
+      }
+      gwHttpTopUsers: gatewayL7RequestsAdaptiveGroups(
+        limit: 10
+        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
+        orderBy: [count_DESC]
+      ) {
+        count
+        dimensions { userEmail }
+      }
     }
   }
 }

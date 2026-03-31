@@ -313,29 +313,69 @@ export function renderEmail({
   }).join('');
 
   // ── Gateway / ZTNA ────────────────────────────────────────────────────────
+  // Resolver decision integer → human label (per Cloudflare docs)
+  const RESOLVER_DECISION = {
+    3:  'Blocked by Category',
+    4:  'Allowed — No Location',
+    5:  'Allowed — No Policy Match',
+    6:  'Blocked — Always Block',
+    7:  'Safe Search Override',
+    8:  'Override Applied',
+    9:  'Blocked by Rule',
+    10: 'Allowed by Rule',
+  };
+  function gwDecLabel(raw) {
+    const s = String(raw ?? '');
+    const n = Number(s);
+    if (!isNaN(n) && RESOLVER_DECISION[n]) return RESOLVER_DECISION[n];
+    // String enum fallback (future-proof)
+    return s.replace(/([A-Z])/g, ' $1')
+            .replace(/^./, c => c.toUpperCase())
+            .trim() || `Decision (${s})`;
+  }
+
   const gwDecisions   = gateway.gwDnsByDecision  ?? [];
   const gwTopDomains  = gateway.gwDnsTopDomains  ?? [];
   const gwHttpActions = gateway.gwHttpByAction   ?? [];
-  const hasGateway    = gwDecisions.length > 0 || gwHttpActions.length > 0 || gwTopDomains.length > 0;
+  const gwDnsUsers    = gateway.gwDnsTopUsers    ?? [];
+  const gwHttpUsers   = gateway.gwHttpTopUsers   ?? [];
+  const hasGateway    = gwDecisions.length > 0 || gwHttpActions.length > 0 || gwTopDomains.length > 0
+                     || gwDnsUsers.length > 0 || gwHttpUsers.length > 0;
 
   const maxGwDec  = gwDecisions[0]?.count ?? 1;
   const gwDecBars = gwDecisions.slice(0, 8).map(r => {
-    const d = String(r.dimensions.resolverDecision ?? '').toLowerCase();
+    const raw   = r.dimensions.resolverDecision;
+    const label = gwDecLabel(raw);
+    const d     = label.toLowerCase();
     const color = d.includes('allow') ? C.green : d.includes('block') ? C.red : C.amber;
-    return barRow(String(r.dimensions.resolverDecision ?? ''), r.count, maxGwDec, color);
+    return barRow(label, r.count, maxGwDec, color);
   }).join('');
 
   const maxGwAct  = gwHttpActions[0]?.count ?? 1;
   const gwActBars = gwHttpActions.slice(0, 6).map(r => {
-    const action = r.dimensions.action ?? '';
+    const action = String(r.dimensions.action ?? '');
     const color  = { allow: C.green, block: C.red, isolate: C.amber }[action] ?? C.gray;
-    return barRow(action, r.count, maxGwAct, color);
+    return barRow(action.charAt(0).toUpperCase() + action.slice(1), r.count, maxGwAct, color);
   }).join('');
 
   const maxGwDom  = gwTopDomains[0]?.count ?? 1;
   const gwDomBars = gwTopDomains.slice(0, 10).map(r => {
     const domain = (r.dimensions.queryNameReversed ?? '').split('.').reverse().join('.');
     return barRow(domain, r.count, maxGwDom, C.purple);
+  }).join('');
+
+  // Top users by DNS queries
+  const maxGwDnsUser  = gwDnsUsers[0]?.count ?? 1;
+  const gwDnsUserBars = gwDnsUsers.slice(0, 10).map(r => {
+    const email = String(r.dimensions.userEmail ?? 'Unknown');
+    return barRow(email, r.count, maxGwDnsUser, C.blue);
+  }).join('');
+
+  // Top users by HTTP requests
+  const maxGwHttpUser  = gwHttpUsers[0]?.count ?? 1;
+  const gwHttpUserBars = gwHttpUsers.slice(0, 10).map(r => {
+    const email = String(r.dimensions.userEmail ?? 'Unknown');
+    return barRow(email, r.count, maxGwHttpUser, C.purple);
   }).join('');
 
   // ── DNS config summary ─────────────────────────────────────────────────────
@@ -574,6 +614,24 @@ export function renderEmail({
       Proxy Traffic Actions
     </div>
     <table width="100%" cellpadding="0" cellspacing="0">${gwActBars}</table>
+  </td></tr>` : ''}
+
+  ${gwDnsUserBars ? `
+  <tr><td style="padding:0 32px 16px;">
+    <div style="font-size:11px;font-weight:700;color:#1a3a5c;text-transform:uppercase;
+                letter-spacing:.6px;border-bottom:2px solid #1a3a5c;padding-bottom:5px;margin-bottom:10px;">
+      Top Users by DNS Queries
+    </div>
+    <table width="100%" cellpadding="0" cellspacing="0">${gwDnsUserBars}</table>
+  </td></tr>` : ''}
+
+  ${gwHttpUserBars ? `
+  <tr><td style="padding:0 32px 16px;">
+    <div style="font-size:11px;font-weight:700;color:#1a3a5c;text-transform:uppercase;
+                letter-spacing:.6px;border-bottom:2px solid #1a3a5c;padding-bottom:5px;margin-bottom:10px;">
+      Top Users by HTTP Requests
+    </div>
+    <table width="100%" cellpadding="0" cellspacing="0">${gwHttpUserBars}</table>
   </td></tr>` : ''}
 
   ` : ''}

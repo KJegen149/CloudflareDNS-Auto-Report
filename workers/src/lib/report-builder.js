@@ -23,7 +23,7 @@ export async function processReports(frequency, env) {
   const { results } = await env.DB.prepare(`
     SELECT rc.id, rc.label, rc.zone_id, rc.zone_name, rc.frequency,
            rc.recipients, rc.subject_prefix, rc.report_title,
-           rc.start_date, rc.end_date,
+           rc.start_date, rc.end_date, rc.report_dns, rc.report_ztna,
            c.encrypted_token
     FROM report_configs rc
     JOIN credentials c ON c.id = rc.credential_id
@@ -134,7 +134,7 @@ export async function runReportById(id, env) {
   const config = await env.DB.prepare(`
     SELECT rc.id, rc.label, rc.zone_id, rc.zone_name, rc.frequency,
            rc.recipients, rc.subject_prefix, rc.report_title,
-           rc.start_date, rc.end_date,
+           rc.start_date, rc.end_date, rc.report_dns, rc.report_ztna,
            c.encrypted_token
     FROM report_configs rc
     JOIN credentials c ON c.id = rc.credential_id
