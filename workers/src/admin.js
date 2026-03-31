@@ -60,58 +60,102 @@ function esc(s) {
 // ── Inline CSS (no external assets) ──────────────────────────────────────────
 
 const CSS = `
+:root{
+  --bg:#f0eced;--surface:#fff;--surface2:#fdf9f9;
+  --border:#ede0e1;--border2:#d5c2c5;
+  --text:#1a1a1a;--text-muted:#999;--text-label:#4A1E24;
+  --brand:#722F37;--brand-dark:#4A1E24;
+  --nav-bg:#722F37;--nav-link:rgba(255,255,255,.75);--nav-link-active:#fff;
+  --th-bg:#722F37;--th-text:#fff;
+  --stat-border:#722F37;--stat-val:#722F37;
+  --code-bg:#f4eef0;
+  --btn-sec-bg:#e5d7d9;--btn-sec-text:#4A1E24;--btn-sec-border:#d5c2c5;
+  --btn-sec-hover:#d5c2c5;
+  --flash-err-bg:#fce8e8;--flash-err-border:#f5c6cb;--flash-err-text:#7b1c1c;
+  --badge-green-bg:#d1f0de;--badge-green-text:#1a5c32;
+  --badge-red-bg:#fce8e8;--badge-red-text:#7b1c1c;
+  --badge-amber-bg:#fef3d0;--badge-amber-text:#7a4a00;
+  --badge-gray-bg:#eee;--badge-gray-text:#555;
+  --badge-blue-bg:#ddeeff;--badge-blue-text:#1a3d6e;
+  --toggle-bg:rgba(255,255,255,.18);--toggle-hover:rgba(255,255,255,.28);
+}
+[data-theme=dark]{
+  --bg:#1a1518;--surface:#251e22;--surface2:#2e252a;
+  --border:#3a2d31;--border2:#4a3840;
+  --text:#e8dfe1;--text-muted:#7a6a6e;--text-label:#d4a8ae;
+  --brand:#c97880;--brand-dark:#e8a0a8;
+  --nav-bg:#1e1518;--nav-link:rgba(255,255,255,.55);--nav-link-active:rgba(255,255,255,.9);
+  --th-bg:#2e1f23;--th-text:#e8dfe1;
+  --stat-border:#c97880;--stat-val:#c97880;
+  --code-bg:#2e1f23;
+  --btn-sec-bg:#3a2d31;--btn-sec-text:#d4a8ae;--btn-sec-border:#4a3840;
+  --btn-sec-hover:#4a3840;
+  --flash-err-bg:#3b1a1a;--flash-err-border:#6b2a2a;--flash-err-text:#f0a0a0;
+  --badge-green-bg:#0d2e1a;--badge-green-text:#6ee09a;
+  --badge-red-bg:#2e0d0d;--badge-red-text:#f08080;
+  --badge-amber-bg:#2e1e00;--badge-amber-text:#f0c060;
+  --badge-gray-bg:#2a2a2a;--badge-gray-text:#aaa;
+  --badge-blue-bg:#0d1e35;--badge-blue-text:#80b8f0;
+  --toggle-bg:rgba(255,255,255,.1);--toggle-hover:rgba(255,255,255,.18);
+}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;
-     background:#f0eced;color:#1a1a1a;font-size:14px;line-height:1.5}
-a{color:#722F37;text-decoration:none}a:hover{text-decoration:underline}
-nav{background:#722F37;padding:12px 28px;display:flex;align-items:center;gap:4px}
+     background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;transition:background .2s,color .2s}
+a{color:var(--brand);text-decoration:none}a:hover{text-decoration:underline}
+nav{background:var(--nav-bg);padding:12px 28px;display:flex;align-items:center;gap:4px}
 nav .brand{color:#fff;font-weight:700;font-size:16px;margin-right:20px;letter-spacing:.3px}
-nav a{color:rgba(255,255,255,.75);font-size:13px;padding:5px 12px;border-radius:4px}
-nav a:hover,nav a.active{color:#fff;background:rgba(255,255,255,.15);text-decoration:none}
+nav a{color:var(--nav-link);font-size:13px;padding:5px 12px;border-radius:4px}
+nav a:hover,nav a.active{color:var(--nav-link-active);background:rgba(255,255,255,.15);text-decoration:none}
+nav .spacer{flex:1}
+.theme-toggle{background:var(--toggle-bg);border:none;cursor:pointer;
+  color:rgba(255,255,255,.8);font-size:15px;width:30px;height:30px;
+  border-radius:50%;display:flex;align-items:center;justify-content:center;
+  transition:background .15s;padding:0;line-height:1}
+.theme-toggle:hover{background:var(--toggle-hover);color:#fff}
 .wrap{max-width:980px;margin:28px auto;padding:0 16px}
-h1{font-size:20px;font-weight:700;color:#722F37;margin-bottom:20px}
-.card{background:#fff;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.08);
+h1{font-size:20px;font-weight:700;color:var(--brand);margin-bottom:20px}
+.card{background:var(--surface);border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.12);
       padding:22px 24px;margin-bottom:20px}
 .stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px}
-.stat{background:#fff;border-left:4px solid #722F37;border-radius:4px;padding:14px 18px;
-      box-shadow:0 1px 3px rgba(0,0,0,.07)}
-.stat-val{font-size:28px;font-weight:700;color:#722F37;line-height:1}
-.stat-lbl{font-size:10px;color:#999;text-transform:uppercase;letter-spacing:.5px;margin-top:5px}
+.stat{background:var(--surface);border-left:4px solid var(--stat-border);border-radius:4px;padding:14px 18px;
+      box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.stat-val{font-size:28px;font-weight:700;color:var(--stat-val);line-height:1}
+.stat-lbl{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-top:5px}
 table{width:100%;border-collapse:collapse}
-th{background:#722F37;color:#fff;padding:8px 12px;text-align:left;
+th{background:var(--th-bg);color:var(--th-text);padding:8px 12px;text-align:left;
    font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600}
-td{padding:8px 12px;border-bottom:1px solid #ede0e1;font-size:13px;vertical-align:middle}
+td{padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
 tr:last-child td{border-bottom:none}
-tr:nth-child(even) td{background:#fdf9f9}
+tr:nth-child(even) td{background:var(--surface2)}
 .btn{display:inline-block;padding:6px 14px;border-radius:4px;font-size:12px;font-weight:600;
      border:none;cursor:pointer;text-decoration:none;line-height:1.4}
-.btn-primary{background:#722F37;color:#fff}.btn-primary:hover{background:#4A1E24;color:#fff;text-decoration:none}
+.btn-primary{background:var(--brand);color:#fff}.btn-primary:hover{background:var(--brand-dark);color:#fff;text-decoration:none}
 .btn-danger{background:#C0392B;color:#fff}.btn-danger:hover{background:#922b21;color:#fff;text-decoration:none}
-.btn-secondary{background:#e5d7d9;color:#4A1E24;border:1px solid #d5c2c5}
-.btn-secondary:hover{background:#d5c2c5;color:#4A1E24;text-decoration:none}
+.btn-secondary{background:var(--btn-sec-bg);color:var(--btn-sec-text);border:1px solid var(--btn-sec-border)}
+.btn-secondary:hover{background:var(--btn-sec-hover);color:var(--btn-sec-text);text-decoration:none}
 .btn-sm{padding:3px 10px;font-size:11px}
 .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600}
-.badge-green{background:#d1f0de;color:#1a5c32}
-.badge-red{background:#fce8e8;color:#7b1c1c}
-.badge-amber{background:#fef3d0;color:#7a4a00}
-.badge-gray{background:#eee;color:#555}
-.badge-blue{background:#ddeeff;color:#1a3d6e}
-form label{display:block;font-size:12px;font-weight:600;color:#4A1E24;margin-bottom:4px;margin-top:16px}
+.badge-green{background:var(--badge-green-bg);color:var(--badge-green-text)}
+.badge-red{background:var(--badge-red-bg);color:var(--badge-red-text)}
+.badge-amber{background:var(--badge-amber-bg);color:var(--badge-amber-text)}
+.badge-gray{background:var(--badge-gray-bg);color:var(--badge-gray-text)}
+.badge-blue{background:var(--badge-blue-bg);color:var(--badge-blue-text)}
+form label{display:block;font-size:12px;font-weight:600;color:var(--text-label);margin-bottom:4px;margin-top:16px}
 form label:first-of-type{margin-top:0}
 form input[type=text],form input[type=email],form input[type=password],
 form input[type=date],form select,form textarea{
-  width:100%;padding:8px 11px;border:1px solid #d5c2c5;border-radius:4px;
-  font-size:13px;background:#fff;color:#1a1a1a}
+  width:100%;padding:8px 11px;border:1px solid var(--border2);border-radius:4px;
+  font-size:13px;background:var(--surface);color:var(--text)}
 form input:focus,form select:focus,form textarea:focus{
-  outline:none;border-color:#722F37;box-shadow:0 0 0 2px rgba(114,47,55,.12)}
+  outline:none;border-color:var(--brand);box-shadow:0 0 0 2px rgba(114,47,55,.15)}
 form textarea{min-height:80px;resize:vertical;font-family:inherit}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.hint{font-size:11px;color:#999;margin-top:3px;margin-bottom:0}
+.hint{font-size:11px;color:var(--text-muted);margin-top:3px;margin-bottom:0}
 .actions{display:flex;gap:6px;align-items:center;white-space:nowrap}
-.flash-error{background:#fce8e8;border:1px solid #f5c6cb;color:#7b1c1c;
+.flash-error{background:var(--flash-err-bg);border:1px solid var(--flash-err-border);color:var(--flash-err-text);
              padding:10px 14px;border-radius:4px;margin-bottom:16px;font-size:13px}
-.empty-row td{color:#999;text-align:center;padding:22px;font-style:italic}
-code{font-family:monospace;font-size:12px;background:#f4eef0;padding:1px 5px;border-radius:3px}
+.empty-row td{color:var(--text-muted);text-align:center;padding:22px;font-style:italic}
+code{font-family:monospace;font-size:12px;background:var(--code-bg);padding:1px 5px;border-radius:3px}
 `;
 
 function layout(title, body, activePath = '') {
@@ -120,19 +164,39 @@ function layout(title, body, activePath = '') {
   return `<!DOCTYPE html><html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)} — DNS Report Admin</title>
-<style>${CSS}</style></head>
+<style>${CSS}</style>
+<script>
+  (function(){var t=localStorage.getItem('theme');if(t)document.documentElement.setAttribute('data-theme',t);})();
+</script>
+</head>
 <body>
 <nav>
-  <span class="brand">⚡ DNS Reports</span>
+  <span class="brand">&#9889; DNS Reports</span>
   ${navLink('/admin', 'Dashboard')}
   ${navLink('/admin/credentials', 'Credentials')}
   ${navLink('/admin/reports', 'Reports')}
   ${navLink('/admin/history', 'History')}
+  <span class="spacer"></span>
+  <button class="theme-toggle" id="themeToggle" title="Toggle dark/light mode" aria-label="Toggle dark/light mode"></button>
 </nav>
 <div class="wrap">
   <h1>${esc(title)}</h1>
   ${body}
 </div>
+<script>
+  (function(){
+    var btn=document.getElementById('themeToggle');
+    function getTheme(){return document.documentElement.getAttribute('data-theme')||'light';}
+    function setIcon(theme){btn.textContent=theme==='dark'?'\u2600':'\uD83C\uDF19';}
+    setIcon(getTheme());
+    btn.addEventListener('click',function(){
+      var next=getTheme()==='dark'?'light':'dark';
+      document.documentElement.setAttribute('data-theme',next);
+      localStorage.setItem('theme',next);
+      setIcon(next);
+    });
+  })();
+</script>
 </body></html>`;
 }
 
