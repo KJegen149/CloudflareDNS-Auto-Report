@@ -334,13 +334,13 @@ export function renderEmail({
             .trim() || `Decision (${s})`;
   }
 
-  const gwDecisions   = gateway.gwDnsByDecision  ?? [];
-  const gwTopDomains  = gateway.gwDnsTopDomains  ?? [];
-  const gwHttpActions = gateway.gwHttpByAction   ?? [];
-  const gwDnsUsers    = gateway.gwDnsTopUsers    ?? [];
-  const gwHttpUsers   = gateway.gwHttpTopUsers   ?? [];
-  const hasGateway    = gwDecisions.length > 0 || gwHttpActions.length > 0 || gwTopDomains.length > 0
-                     || gwDnsUsers.length > 0 || gwHttpUsers.length > 0;
+  const gwDecisions    = gateway.gwDnsByDecision   ?? [];
+  const gwTopDomains   = gateway.gwDnsTopDomains   ?? [];
+  const gwHttpActions  = gateway.gwHttpByAction    ?? [];
+  const gwDnsDevices   = gateway.gwDnsTopDevices   ?? [];
+  const gwHttpDevices  = gateway.gwHttpTopDevices  ?? [];
+  const hasGateway     = gwDecisions.length > 0 || gwHttpActions.length > 0 || gwTopDomains.length > 0
+                      || gwDnsDevices.length > 0  || gwHttpDevices.length > 0;
 
   const maxGwDec  = gwDecisions[0]?.count ?? 1;
   const gwDecBars = gwDecisions.slice(0, 8).map(r => {
@@ -364,23 +364,18 @@ export function renderEmail({
     return barRow(domain, r.count, maxGwDom, C.purple);
   }).join('');
 
-  // The correct dimension key is discovered at runtime; fall back through known names
-  const dimKey = gateway.gwUserDimKey ?? 'userIdentity';
-
-  // Top users by DNS queries
-  const maxGwDnsUser  = gwDnsUsers[0]?.count ?? 1;
-  const gwDnsUserBars = gwDnsUsers.slice(0, 10).map(r => {
-    const label = String(r.dimensions[dimKey] ?? r.dimensions.userIdentity
-                        ?? r.dimensions.userEmail ?? r.dimensions.email ?? 'Unknown');
-    return barRow(label, r.count, maxGwDnsUser, C.blue);
+  // Top devices by DNS queries
+  const maxGwDnsDev   = gwDnsDevices[0]?.count ?? 1;
+  const gwDnsDevBars  = gwDnsDevices.slice(0, 10).map(r => {
+    const label = String(r.dimensions.deviceName ?? 'Unknown Device');
+    return barRow(label, r.count, maxGwDnsDev, C.blue);
   }).join('');
 
-  // Top users by HTTP requests
-  const maxGwHttpUser  = gwHttpUsers[0]?.count ?? 1;
-  const gwHttpUserBars = gwHttpUsers.slice(0, 10).map(r => {
-    const label = String(r.dimensions[dimKey] ?? r.dimensions.userIdentity
-                        ?? r.dimensions.userEmail ?? r.dimensions.email ?? 'Unknown');
-    return barRow(label, r.count, maxGwHttpUser, C.purple);
+  // Top devices by HTTP requests
+  const maxGwHttpDev  = gwHttpDevices[0]?.count ?? 1;
+  const gwHttpDevBars = gwHttpDevices.slice(0, 10).map(r => {
+    const label = String(r.dimensions.deviceName ?? 'Unknown Device');
+    return barRow(label, r.count, maxGwHttpDev, C.purple);
   }).join('');
 
   // ── DNS config summary ─────────────────────────────────────────────────────
@@ -621,22 +616,22 @@ export function renderEmail({
     <table width="100%" cellpadding="0" cellspacing="0">${gwActBars}</table>
   </td></tr>` : ''}
 
-  ${gwDnsUserBars ? `
+  ${gwDnsDevBars ? `
   <tr><td style="padding:0 32px 16px;">
     <div style="font-size:11px;font-weight:700;color:#1a3a5c;text-transform:uppercase;
                 letter-spacing:.6px;border-bottom:2px solid #1a3a5c;padding-bottom:5px;margin-bottom:10px;">
-      Top Users by DNS Queries
+      Top Devices by DNS Queries
     </div>
-    <table width="100%" cellpadding="0" cellspacing="0">${gwDnsUserBars}</table>
+    <table width="100%" cellpadding="0" cellspacing="0">${gwDnsDevBars}</table>
   </td></tr>` : ''}
 
-  ${gwHttpUserBars ? `
+  ${gwHttpDevBars ? `
   <tr><td style="padding:0 32px 16px;">
     <div style="font-size:11px;font-weight:700;color:#1a3a5c;text-transform:uppercase;
                 letter-spacing:.6px;border-bottom:2px solid #1a3a5c;padding-bottom:5px;margin-bottom:10px;">
-      Top Users by HTTP Requests
+      Top Devices by HTTP Requests
     </div>
-    <table width="100%" cellpadding="0" cellspacing="0">${gwHttpUserBars}</table>
+    <table width="100%" cellpadding="0" cellspacing="0">${gwHttpDevBars}</table>
   </td></tr>` : ''}
 
   ` : ''}

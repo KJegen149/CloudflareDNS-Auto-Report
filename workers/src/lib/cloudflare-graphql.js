@@ -159,50 +159,36 @@ query GatewayInsights($accountTag: String!, $startDatetime: Time!, $endDatetime:
 `;
 
 /**
- * Secondary Gateway query for per-user breakdowns.
- * Kept separate so a schema error here cannot break the core gateway data.
- * Try the most likely dimension name candidates in order; whichever one
- * works first is used. The correct name is discovered via introspection
- * and cached in GW_USER_DIM at module load time (best-effort).
+ * Secondary Gateway query for per-device breakdowns.
+ * User identity (email) is not exposed as a groupable dimension in the
+ * analytics API — only raw Logpush streams carry per-user data.
+ * deviceName is the best available proxy for "who is using the network".
+ * Kept separate so a failure here cannot affect the core gateway data.
  */
-const GW_USER_DIM_CANDIDATES = ['userIdentity', 'email', 'userEmail', 'userId'];
-
-function buildGatewayUsersQuery(dim) {
-  return `
-query GatewayUsers($accountTag: String!, $startDatetime: Time!, $endDatetime: Time!) {
+const GATEWAY_DEVICES_QUERY = `
+query GatewayDevices($accountTag: String!, $startDatetime: Time!, $endDatetime: Time!) {
   viewer {
     accounts(filter: { accountTag: $accountTag }) {
-      gwDnsTopUsers: gatewayResolverQueriesAdaptiveGroups(
+      gwDnsTopDevices: gatewayResolverQueriesAdaptiveGroups(
         limit: 10
         filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
         orderBy: [count_DESC]
       ) {
         count
-        dimensions { ${dim} }
+        dimensions { deviceName }
       }
-      gwHttpTopUsers: gatewayL7RequestsAdaptiveGroups(
+      gwHttpTopDevices: gatewayL7RequestsAdaptiveGroups(
         limit: 10
         filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
         orderBy: [count_DESC]
       ) {
         count
-        dimensions { ${dim} }
+        dimensions { deviceName }
       }
     }
   }
-}`;
 }
-
-/** GraphQL introspection query to discover dimension fields for gateway datasets. */
-const GATEWAY_INTROSPECT_QUERY = `
-query {
-  __type(name: "GatewayResolverQueriesAdaptiveGroupsDimension") {
-    fields { name }
-  }
-  __typeL7: __type(name: "GatewayL7RequestsAdaptiveGroupsDimension") {
-    fields { name }
-  }
-}`;
+`;
 
 /** Known AI crawlers detected by user-agent substring. Available on all plans. */
 const AI_BOTS = [
@@ -463,54 +449,30 @@ export class CloudflareClient {
       return {};
     }
 
-    // ── User query — try each candidate dimension name until one works ────────
-    let userData = {};
-    let foundDim = null;
-    for (const dim of GW_USER_DIM_CANDIDATES) {
-      try {
-        const resp = await fetch(GRAPHQL_ENDPOINT, {
-          method: 'POST',
-          headers: this.headers,
-          body: JSON.stringify({ query: buildGatewayUsersQuery(dim), variables: vars }),
-        });
-        if (!resp.ok) break;
+    // ── Device query (best available proxy for per-user activity) ────────────
+    // Note: user identity (email) is not a groupable dimension in the Gateway
+    // analytics API — per-user data requires Cloudflare Logpush raw streams.
+    let deviceData = {};
+    try {
+      const resp = await fetch(GRAPHQL_ENDPOINT, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({ query: GATEWAY_DEVICES_QUERY, variables: vars }),
+      });
+      if (resp.ok) {
         const result = await resp.json();
         if (!result.errors?.length) {
-          userData = result?.data?.viewer?.accounts?.[0] ?? {};
-          foundDim = dim;
-          console.log(`getGatewayData users: dim=${dim} keys=${JSON.stringify(Object.keys(userData))}`);
-          break;
+          deviceData = result?.data?.viewer?.accounts?.[0] ?? {};
+          console.log(`getGatewayData devices: keys=${JSON.stringify(Object.keys(deviceData))}`);
+        } else {
+          console.warn(`getGatewayData device query errors: ${JSON.stringify(result.errors.slice(0, 1))}`);
         }
-        // Wrong field name — log and try next candidate
-        const msg = result.errors?.[0]?.message ?? 'unknown error';
-        console.warn(`getGatewayData user query dim=${dim} failed: ${msg}`);
-      } catch (err) {
-        console.warn(`getGatewayData user query dim=${dim} error: ${err.message}`);
-        break;
       }
-    }
-    if (!foundDim) {
-      // All candidates exhausted — run introspection so we can identify the right field
-      try {
-        const iResp = await fetch(GRAPHQL_ENDPOINT, {
-          method: 'POST', headers: this.headers,
-          body: JSON.stringify({ query: GATEWAY_INTROSPECT_QUERY }),
-        });
-        if (iResp.ok) {
-          const iResult = await iResp.json();
-          const dnsFields  = (iResult?.data?.__type?.fields ?? []).map(f => f.name);
-          const httpFields = (iResult?.data?.__typeL7?.fields ?? []).map(f => f.name);
-          console.log(`GW introspect DNS dims: ${JSON.stringify(dnsFields)}`);
-          console.log(`GW introspect HTTP dims: ${JSON.stringify(httpFields)}`);
-        }
-      } catch (_) {}
-    }
-    // Store working dim name on class so email template can access right key
-    if (foundDim) {
-      userData.gwUserDimKey = foundDim;
+    } catch (err) {
+      console.warn(`getGatewayData device query error: ${err.message}`);
     }
 
-    return { ...coreData, ...userData };
+    return { ...coreData, ...deviceData };
   }
 
   /**
