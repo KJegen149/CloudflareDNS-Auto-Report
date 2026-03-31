@@ -471,10 +471,6 @@ export class CloudflareClient {
     }
 
     return { ...coreData, ...userData };
-    } catch (err) {
-      console.warn(`getGatewayData error: ${err.message}`);
-      return {};
-    }
   }
 
   /**
