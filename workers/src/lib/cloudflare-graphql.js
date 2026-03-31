@@ -158,37 +158,10 @@ query GatewayInsights($accountTag: String!, $startDatetime: Time!, $endDatetime:
 }
 `;
 
-/**
- * Secondary Gateway query for per-device breakdowns.
- * User identity (email) is not exposed as a groupable dimension in the
- * analytics API — only raw Logpush streams carry per-user data.
- * deviceName is the best available proxy for "who is using the network".
- * Kept separate so a failure here cannot affect the core gateway data.
- */
-const GATEWAY_DEVICES_QUERY = `
-query GatewayDevices($accountTag: String!, $startDatetime: Time!, $endDatetime: Time!) {
-  viewer {
-    accounts(filter: { accountTag: $accountTag }) {
-      gwDnsTopDevices: gatewayResolverQueriesAdaptiveGroups(
-        limit: 10
-        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
-        orderBy: [count_DESC]
-      ) {
-        count
-        dimensions { deviceName }
-      }
-      gwHttpTopDevices: gatewayL7RequestsAdaptiveGroups(
-        limit: 10
-        filter: { datetime_geq: $startDatetime, datetime_leq: $endDatetime }
-        orderBy: [count_DESC]
-      ) {
-        count
-        dimensions { deviceName }
-      }
-    }
-  }
-}
-`;
+// Note: per-user/per-device breakdown is not available in the Gateway analytics
+// adaptive groups API — those datasets only expose aggregate dimensions
+// (resolverDecision, queryNameReversed, action). Per-device/per-user data
+// requires Cloudflare Logpush configured to a storage destination.
 
 /** Known AI crawlers detected by user-agent substring. Available on all plans. */
 const AI_BOTS = [
@@ -449,30 +422,7 @@ export class CloudflareClient {
       return {};
     }
 
-    // ── Device query (best available proxy for per-user activity) ────────────
-    // Note: user identity (email) is not a groupable dimension in the Gateway
-    // analytics API — per-user data requires Cloudflare Logpush raw streams.
-    let deviceData = {};
-    try {
-      const resp = await fetch(GRAPHQL_ENDPOINT, {
-        method: 'POST',
-        headers: this.headers,
-        body: JSON.stringify({ query: GATEWAY_DEVICES_QUERY, variables: vars }),
-      });
-      if (resp.ok) {
-        const result = await resp.json();
-        if (!result.errors?.length) {
-          deviceData = result?.data?.viewer?.accounts?.[0] ?? {};
-          console.log(`getGatewayData devices: keys=${JSON.stringify(Object.keys(deviceData))}`);
-        } else {
-          console.warn(`getGatewayData device query errors: ${JSON.stringify(result.errors.slice(0, 1))}`);
-        }
-      }
-    } catch (err) {
-      console.warn(`getGatewayData device query error: ${err.message}`);
-    }
-
-    return { ...coreData, ...deviceData };
+    return coreData;
   }
 
   /**
