@@ -481,6 +481,38 @@ export class CloudflareClient {
   }
 
   /**
+   * Per-user Gateway activity via Log Explorer SQL API.
+   * Requires: Logs Read + Zero Trust PII permissions on the API token,
+   * and gateway_dns / gateway_http datasets enabled in Log Explorer.
+   * Returns empty object silently if Log Explorer is not enabled.
+   */
+  async getGatewayUserData(accountId, startDate, endDate) {
+    if (!accountId) return {};
+
+    const base = `${REST_BASE}/accounts/${accountId}/logs/explorer/query/sql`;
+    const run  = async (sql) => {
+      const resp = await fetch(`${base}?query=${encodeURIComponent(sql)}`, { headers: this.headers });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      if (!data.success) throw new Error(JSON.stringify(data.errors?.slice(0, 1)));
+      return data.result ?? [];
+    };
+
+    try {
+      const [dnsUsers, httpUsers, blockedUsers] = await Promise.all([
+        run(`SELECT Email, COUNT(*) AS queries FROM gateway_dns WHERE Date >= '${startDate}' AND Date <= '${endDate}' AND Email != '' GROUP BY Email ORDER BY queries DESC LIMIT 10`),
+        run(`SELECT Email, COUNT(*) AS requests FROM gateway_http WHERE Date >= '${startDate}' AND Date <= '${endDate}' AND Email != '' GROUP BY Email ORDER BY requests DESC LIMIT 10`),
+        run(`SELECT Email, COUNT(*) AS blocked FROM gateway_dns WHERE Date >= '${startDate}' AND Date <= '${endDate}' AND Email != '' AND Action = 'block' GROUP BY Email ORDER BY blocked DESC LIMIT 10`),
+      ]);
+      console.log(`getGatewayUserData: dns=${dnsUsers.length} http=${httpUsers.length} blocked=${blockedUsers.length}`);
+      return { gwUserDns: dnsUsers, gwUserHttp: httpUsers, gwUserBlocked: blockedUsers };
+    } catch (err) {
+      console.warn(`getGatewayUserData error: ${err.message}`);
+      return {};
+    }
+  }
+
+  /**
    * Collect all data needed to render a report for one zone.
    * @param {string} zoneId
    * @param {'daily'|'weekly'|'monthly'} frequency
@@ -517,8 +549,10 @@ export class CloudflareClient {
     }
 
     const accountId = zoneInfo?.account?.id ?? '';
-    const [gateway, aiTraffic] = await Promise.all([
-      options.ztna === false ? Promise.resolve({}) : this.getGatewayData(accountId, start, end),
+    const skipZtna  = options.ztna === false;
+    const [gateway, gatewayUsers, aiTraffic] = await Promise.all([
+      skipZtna ? Promise.resolve({}) : this.getGatewayData(accountId, start, end),
+      skipZtna ? Promise.resolve({}) : this.getGatewayUserData(accountId, start, end),
       this.getAiTrafficData(zoneId, start, end),
     ]);
 
@@ -528,11 +562,11 @@ export class CloudflareClient {
       dnsRecords,
       dnssec,
       analytics,
-      http_security: httpSecurity,
-      gateway,
-      ai_traffic:    aiTraffic,
-      period:        { start, end, frequency },
-      options:       { dns: options.dns !== false, ztna: options.ztna !== false },
+      http_security:   httpSecurity,
+      gateway:         { ...gateway, ...gatewayUsers },
+      ai_traffic:      aiTraffic,
+      period:          { start, end, frequency },
+      options:         { dns: options.dns !== false, ztna: options.ztna !== false },
     };
   }
 }

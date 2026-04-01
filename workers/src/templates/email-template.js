@@ -361,6 +361,33 @@ export function renderEmail({
     return barRow(domain, r.count, maxGwDom, C.purple);
   }).join('');
 
+  // ── Log Explorer per-user data ─────────────────────────────────────────────
+  // Results from gateway_dns / gateway_http Log Explorer SQL queries.
+  // Row keys are lowercase (SQL result normalisation).
+  const gwUserDnsRows     = gateway.gwUserDns     ?? [];
+  const gwUserHttpRows    = gateway.gwUserHttp    ?? [];
+  const gwUserBlockedRows = gateway.gwUserBlocked ?? [];
+
+  const maxGwUDns = gwUserDnsRows[0]?.queries ?? gwUserDnsRows[0]?.['queries'] ?? 1;
+  const gwUserDnsBars = gwUserDnsRows.slice(0, 10).map(r => {
+    const email = String(r.email ?? r.Email ?? 'Unknown');
+    const count = Number(r.queries ?? 0);
+    return barRow(email, count, maxGwUDns, C.blue);
+  }).join('');
+
+  const maxGwUHttp = gwUserHttpRows[0]?.requests ?? 1;
+  const gwUserHttpBars = gwUserHttpRows.slice(0, 10).map(r => {
+    const email = String(r.email ?? r.Email ?? 'Unknown');
+    const count = Number(r.requests ?? 0);
+    return barRow(email, count, maxGwUHttp, C.purple);
+  }).join('');
+
+  const maxGwUBlocked = gwUserBlockedRows[0]?.blocked ?? 1;
+  const gwUserBlockedBars = gwUserBlockedRows.slice(0, 10).map(r => {
+    const email = String(r.email ?? r.Email ?? 'Unknown');
+    const count = Number(r.blocked ?? 0);
+    return barRow(email, count, maxGwUBlocked, C.red);
+  }).join('');
 
   // ── DNS config summary ─────────────────────────────────────────────────────
   const proxied = dnsRecords.filter(r => r.proxied).length;
@@ -600,6 +627,32 @@ export function renderEmail({
     <table width="100%" cellpadding="0" cellspacing="0">${gwActBars}</table>
   </td></tr>` : ''}
 
+  ${gwUserDnsBars ? `
+  <tr><td style="padding:0 32px 16px;">
+    <div style="font-size:11px;font-weight:700;color:#1a3a5c;text-transform:uppercase;
+                letter-spacing:.6px;border-bottom:2px solid #1a3a5c;padding-bottom:5px;margin-bottom:10px;">
+      Top Users by DNS Queries
+    </div>
+    <table width="100%" cellpadding="0" cellspacing="0">${gwUserDnsBars}</table>
+  </td></tr>` : ''}
+
+  ${gwUserHttpBars ? `
+  <tr><td style="padding:0 32px 16px;">
+    <div style="font-size:11px;font-weight:700;color:#1a3a5c;text-transform:uppercase;
+                letter-spacing:.6px;border-bottom:2px solid #1a3a5c;padding-bottom:5px;margin-bottom:10px;">
+      Top Users by HTTP Requests
+    </div>
+    <table width="100%" cellpadding="0" cellspacing="0">${gwUserHttpBars}</table>
+  </td></tr>` : ''}
+
+  ${gwUserBlockedBars ? `
+  <tr><td style="padding:0 32px 16px;">
+    <div style="font-size:11px;font-weight:700;color:#1a3a5c;text-transform:uppercase;
+                letter-spacing:.6px;border-bottom:2px solid #1a3a5c;padding-bottom:5px;margin-bottom:10px;">
+      Top Blocked Users
+    </div>
+    <table width="100%" cellpadding="0" cellspacing="0">${gwUserBlockedBars}</table>
+  </td></tr>` : ''}
 
   ` : ''}
 
